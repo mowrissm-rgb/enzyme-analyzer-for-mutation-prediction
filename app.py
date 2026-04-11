@@ -24,8 +24,7 @@ def run_analysis(pdb_path):
         
     model = structure[0]
     
-    # We use ShrakeRupley instead of DSSP because it is 100% Python-based
-    # and will NEVER fail due to missing system software or Linux errors.
+    # ShrakeRupley is built-in to Biopython. No extra installs needed.
     sr = ShrakeRupley()
     try:
         sr.compute(model, level="R")
@@ -34,20 +33,20 @@ def run_analysis(pdb_path):
         return None
 
     res_data = []
+    # Identify the target chain (Chain A / first chain)
     target_chain = list(model.child_dict.keys())[0]
 
     for residue in model[target_chain]:
-        # Only process standard amino acids
         if 'CA' in residue:
             try:
-                # Get the SASA value calculated by ShrakeRupley
+                # Retrieve SASA and B-Factor
                 sasa_val = residue.sasa
                 b_factor = residue['CA'].get_bfactor()
                 
                 res_data.append({
                     "Residue": residue.get_resname(),
                     "Position": residue.id[1],
-                    "rSASA": sasa_val / 200, # Normalized
+                    "rSASA": sasa_val / 200, 
                     "B_Factor": b_factor
                 })
             except:
@@ -57,7 +56,7 @@ def run_analysis(pdb_path):
     if df.empty:
         return None
 
-    # Standard Scoring Logic (Same as your original request)
+    # Normalization & Hotspot Scoring
     b_min, b_max = df['B_Factor'].min(), df['B_Factor'].max()
     df['Norm_B'] = (df['B_Factor'] - b_min) / (b_max - b_min) * 100 if b_max != b_min else 0
     df['Hotspot_Score'] = (0.5 * df['Norm_B']) + (0.5 * (df['rSASA'] * 100))
@@ -66,11 +65,10 @@ def run_analysis(pdb_path):
 
 # --- 2. REPLACEMENT LOGIC ---
 def get_replacements(wt):
-    # Mapping for common mutation strategies
-    hydrophobic = ['A', 'V', 'L', 'I', 'M', 'F', 'W', 'P']
-    charged = ['R', 'K', 'D', 'E', 'H']
-    if any(x in wt for x in hydrophobic): return "S, T, A, Q, N"
-    elif any(x in wt for x in charged): return "A, N, Q, S, T"
+    hydrophobic = ['ALA', 'VAL', 'LEU', 'ILE', 'MET', 'PHE', 'TRP', 'PRO']
+    charged = ['ARG', 'LYS', 'ASP', 'GLU', 'HIS']
+    if wt in hydrophobic: return "S, T, A, Q, N"
+    elif wt in charged: return "A, N, Q, S, T"
     else: return "A, V, I, L, F"
 
 # --- 3. SIDEBAR & INPUT ---
@@ -91,15 +89,16 @@ else:
     pdb_id = st.sidebar.text_input("Enter 4-Digit PDB ID", value="4TKX").strip().upper()
     if st.sidebar.button("Fetch PDB"):
         pdbl = PDBList()
-        raw = pdbl.retrieve_pdb_file(pdb_id, pdir='.', file_format='pdb')
-        if os.path.exists(raw):
-            shutil.move(raw, "input.pdb")
-            pdb_file = "input.pdb"
-            pdb_name = pdb_id
+        with st.spinner("Downloading..."):
+            raw = pdbl.retrieve_pdb_file(pdb_id, pdir='.', file_format='pdb')
+            if os.path.exists(raw):
+                shutil.move(raw, "input.pdb")
+                pdb_file = "input.pdb"
+                pdb_name = pdb_id
 
 # --- 4. THE RESULT SECTION ---
 if pdb_file:
-    with st.spinner("Analyzing structural dynamics..."):
+    with st.spinner("Running Analysis..."):
         df = run_analysis(pdb_file)
 
     if df is not None:
@@ -111,7 +110,7 @@ if pdb_file:
         ax.fill_between(df['Position'], df['Hotspot_Score'], color="#4e79a7", alpha=0.3)
         ax.plot(df['Position'], df['Hotspot_Score'], color="#4e79a7", lw=2)
         ax.set_ylabel("Mutation Hotspot Score")
-        ax.set_xlabel("Residue Index")
+        ax.set_xlabel("Residue Position")
         st.pyplot(fig)
 
         # Table
@@ -121,10 +120,10 @@ if pdb_file:
         display_df['Suggested Replacements'] = display_df['Residue'].apply(get_replacements)
         st.table(display_df)
 
-        # Report Download
+        # Report Generation
         doc = Document()
         doc.add_heading(f"Enzyme Mutation Report: {pdb_name}", 0)
-        doc.add_paragraph("Analysis generated using Shrake-Rupley SASA algorithms and B-Factor flexibility analysis.")
+        doc.add_paragraph("Analysis using Shrake-Rupley SASA and B-Factor flexibility.")
         
         table = doc.add_table(rows=1, cols=4)
         table.style = 'Table Grid'
