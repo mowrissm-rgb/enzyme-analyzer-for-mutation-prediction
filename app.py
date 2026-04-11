@@ -13,21 +13,20 @@ st.set_page_config(page_title="Enzyme Mutation Predictor", layout="wide")
 st.title("🧬 Enzyme Optimization & Mutation Pipeline")
 st.markdown("Predict structural hotspots and generate engineering reports using DSSP and B-Factor analysis.")
 
-# --- UPDATED Analysis Functions ---
+# --- Analysis Functions ---
 def run_analysis(pdb_path):
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure("protein", pdb_path)
     model = structure[0]
     
-    # Identify the correct executable on the Linux server
+    # Check for DSSP executable (Streamlit servers usually use 'mkdssp' or 'dssp')
     executable = "mkdssp" if shutil.which("mkdssp") else "dssp"
 
     try:
-        # We add file_type="PDB" to support the newer DSSP 4.x versions
-        # that are standard on modern Linux servers.
+        # CRITICAL FIX: file_type="PDB" is required for modern DSSP 4+ versions
         dssp = DSSP(model, pdb_path, dssp=executable, file_type="PDB")
     except Exception as e:
-        # Fallback to the standard command if file_type is not supported
+        # Fallback for older versions if the new command fails
         try:
             dssp = DSSP(model, pdb_path, dssp=executable)
         except Exception as e2:
@@ -35,7 +34,7 @@ def run_analysis(pdb_path):
             return None
 
     res_data = []
-    # Automatically grab the first chain (e.g., Chain A)
+    # Automatically identify the first chain in the PDB file
     target_chain = list(model.child_dict.keys())[0]
 
     for key in dssp.keys():
@@ -62,11 +61,7 @@ def run_analysis(pdb_path):
     b_min, b_max = df['B_Factor'].min(), df['B_Factor'].max()
     df['Norm_B'] = (df['B_Factor'] - b_min) / (b_max - b_min) * 100 if b_max != b_min else 0
     df['Hotspot_Score'] = (0.5 * df['Norm_B']) + (0.5 * (df['rSASA'] * 100))
-    return df
-
-    # Normalization & Scoring
-    df['Norm_B'] = (df['B_Factor'] - df['B_Factor'].min()) / (df['B_Factor'].max() - df['B_Factor'].min()) * 100
-    df['Hotspot_Score'] = (0.5 * df['Norm_B']) + (0.5 * (df['rSASA'] * 100))
+    
     return df
 
 def get_replacements(wt):
@@ -89,13 +84,17 @@ if mode == "Upload PDB":
         pdb_file = "input.pdb"
         pdb_name = file_upload.name.split('.')[0]
 else:
-    pdb_id = st.sidebar.text_input("Enter 4-Digit PDB ID", value="1A2B").strip().upper()
+    pdb_id = st.sidebar.text_input("Enter 4-Digit PDB ID", value="4TKX").strip().upper()
     if st.sidebar.button("Fetch PDB"):
         pdbl = PDBList()
         raw = pdbl.retrieve_pdb_file(pdb_id, pdir='.', file_format='pdb')
-        shutil.move(raw, "input.pdb")
-        pdb_file = "input.pdb"
-        pdb_name = pdb_id
+        # Handle different PDBList naming conventions
+        if os.path.exists(raw):
+            shutil.move(raw, "input.pdb")
+            pdb_file = "input.pdb"
+            pdb_name = pdb_id
+        else:
+            st.error("Could not locate the downloaded PDB file.")
 
 # --- Execution ---
 if pdb_file:
@@ -126,6 +125,22 @@ if pdb_file:
         doc.add_heading(f"Enzyme Mutation Report: {pdb_name}", 0)
         doc.add_paragraph("Identified hotspots based on solvent accessibility and B-factor flexibility.")
         
+        # Table in Word
+        table = doc.add_table(rows=1, cols=4)
+        table.style = 'Table Grid'
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = 'Position'
+        hdr_cells[1].text = 'Residue'
+        hdr_cells[2].text = 'Score'
+        hdr_cells[3].text = 'Replacements'
+
+        for _, row in display_df.iterrows():
+            row_cells = table.add_row().cells
+            row_cells[0].text = str(int(row['Position']))
+            row_cells[1].text = str(row['Residue'])
+            row_cells[2].text = str(round(row['Hotspot_Score'], 2))
+            row_cells[3].text = str(row['Suggested Replacements'])
+
         # Save to buffer for download
         buffer = io.BytesIO()
         doc.save(buffer)
