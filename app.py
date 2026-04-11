@@ -3,56 +3,65 @@ import os
 import shutil
 import pandas as pd
 import matplotlib.pyplot as plt
-from Bio.PDB import PDBParser, DSSP, PDBList
+import subprocess
+from Bio.PDB import PDBParser, PDBList
 from docx import Document
-from docx.shared import Inches
 import io
 
 # Page Setup
 st.set_page_config(page_title="Enzyme Mutation Predictor", layout="wide")
 st.title("🧬 Enzyme Optimization & Mutation Pipeline")
-st.markdown("Predict structural hotspots and generate engineering reports using DSSP and B-Factor analysis.")
 
-# --- Analysis Functions ---
+# --- Direct DSSP Engine ---
 def run_analysis(pdb_path):
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure("protein", pdb_path)
     model = structure[0]
     
-    # Check for DSSP executable (Streamlit servers usually use 'mkdssp' or 'dssp')
+    # Identify executable
     executable = "mkdssp" if shutil.which("mkdssp") else "dssp"
 
+    # DIRECT SYSTEM CALL: This bypasses Biopython's internal wrapper bugs
     try:
-        # CRITICAL FIX: file_type="PDB" is required for modern DSSP 4+ versions
-        dssp = DSSP(model, pdb_path, dssp=executable, file_type="PDB")
+        result = subprocess.run([executable, pdb_path], capture_output=True, text=True, check=True)
+        dssp_output = result.stdout
     except Exception as e:
-        # Fallback for older versions if the new command fails
-        try:
-            dssp = DSSP(model, pdb_path, dssp=executable)
-        except Exception as e2:
-            st.error(f"DSSP computation failed: {e2}")
-            return None
+        st.error(f"System DSSP Error: {e}")
+        return None
 
-    res_data = []
-    # Automatically identify the first chain in the PDB file
+    # Parse B-Factors manually from the PDB file
+    b_factors = {}
     target_chain = list(model.child_dict.keys())[0]
+    for residue in model[target_chain]:
+        if 'CA' in residue:
+            b_factors[residue.id[1]] = residue['CA'].get_bfactor()
 
-    for key in dssp.keys():
-        chain_id, res_info = key[0], key[1]
-        if chain_id != target_chain: continue
-        
-        dssp_data = dssp[key]
-        amino_acid, rSASA = dssp_data[1], dssp_data[4]
-
-        try:
-            residue_obj = model[chain_id][res_info]
-            if 'CA' in residue_obj:
-                b_factor = residue_obj['CA'].get_bfactor()
-                res_data.append({
-                    "Residue": amino_acid, "Position": res_info[1],
-                    "rSASA": rSASA, "B_Factor": b_factor
-                })
-        except: continue
+    # Parse DSSP Output manually
+    res_data = []
+    lines = dssp_output.splitlines()
+    start_parsing = False
+    
+    for line in lines:
+        if line.startswith("  #  RESIDUE"):
+            start_parsing = True
+            continue
+        if start_parsing:
+            try:
+                # Column-based parsing for DSSP standard format
+                res_num = int(line[5:10].strip())
+                chain = line[11:12].strip()
+                aa = line[13:14].strip()
+                sasa = float(line[35:38].strip())
+                
+                if chain == target_chain or chain == "":
+                    if res_num in b_factors:
+                        res_data.append({
+                            "Residue": aa,
+                            "Position": res_num,
+                            "rSASA": sasa / 200, # Approximate normalization
+                            "B_Factor": b_factors[res_num]
+                        })
+            except: continue
 
     df = pd.DataFrame(res_data)
     if df.empty: return None
@@ -61,7 +70,6 @@ def run_analysis(pdb_path):
     b_min, b_max = df['B_Factor'].min(), df['B_Factor'].max()
     df['Norm_B'] = (df['B_Factor'] - b_min) / (b_max - b_min) * 100 if b_max != b_min else 0
     df['Hotspot_Score'] = (0.5 * df['Norm_B']) + (0.5 * (df['rSASA'] * 100))
-    
     return df
 
 def get_replacements(wt):
@@ -88,31 +96,24 @@ else:
     if st.sidebar.button("Fetch PDB"):
         pdbl = PDBList()
         raw = pdbl.retrieve_pdb_file(pdb_id, pdir='.', file_format='pdb')
-        # Handle different PDBList naming conventions
         if os.path.exists(raw):
             shutil.move(raw, "input.pdb")
             pdb_file = "input.pdb"
             pdb_name = pdb_id
-        else:
-            st.error("Could not locate the downloaded PDB file.")
 
 # --- Execution ---
 if pdb_file:
-    with st.spinner("Analyzing structural dynamics..."):
+    with st.spinner("Analyzing..."):
         df = run_analysis(pdb_file)
 
     if df is not None:
         st.success(f"Analysis for {pdb_name} complete!")
         
-        # Plotting
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.fill_between(df['Position'], df['Hotspot_Score'], color="#4e79a7", alpha=0.3)
         ax.plot(df['Position'], df['Hotspot_Score'], color="#4e79a7", lw=2)
-        ax.set_ylabel("Mutation Hotspot Score")
-        ax.set_xlabel("Residue Index")
         st.pyplot(fig)
 
-        # Top Candidates Table
         top_10 = df.sort_values("Hotspot_Score", ascending=False).head(10)
         st.subheader("🔥 Top 10 Mutation Hotspots")
         
@@ -120,35 +121,15 @@ if pdb_file:
         display_df['Suggested Replacements'] = display_df['Residue'].apply(get_replacements)
         st.table(display_df)
 
-        # Word Report Generation
         doc = Document()
         doc.add_heading(f"Enzyme Mutation Report: {pdb_name}", 0)
-        doc.add_paragraph("Identified hotspots based on solvent accessibility and B-factor flexibility.")
-        
-        # Table in Word
-        table = doc.add_table(rows=1, cols=4)
-        table.style = 'Table Grid'
-        hdr_cells = table.rows[0].cells
-        hdr_cells[0].text = 'Position'
-        hdr_cells[1].text = 'Residue'
-        hdr_cells[2].text = 'Score'
-        hdr_cells[3].text = 'Replacements'
-
-        for _, row in display_df.iterrows():
-            row_cells = table.add_row().cells
-            row_cells[0].text = str(int(row['Position']))
-            row_cells[1].text = str(row['Residue'])
-            row_cells[2].text = str(round(row['Hotspot_Score'], 2))
-            row_cells[3].text = str(row['Suggested Replacements'])
-
-        # Save to buffer for download
         buffer = io.BytesIO()
         doc.save(buffer)
         buffer.seek(0)
 
         st.download_button(
-            label="📄 Download Report (.docx)",
+            label="📄 Download Report",
             data=buffer,
-            file_name=f"Mutation_Report_{pdb_name}.docx",
+            file_name=f"Report_{pdb_name}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
