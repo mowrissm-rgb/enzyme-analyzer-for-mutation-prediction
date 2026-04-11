@@ -13,22 +13,28 @@ st.set_page_config(page_title="Enzyme Mutation Predictor", layout="wide")
 st.title("🧬 Enzyme Optimization & Mutation Pipeline")
 st.markdown("Predict structural hotspots and generate engineering reports using DSSP and B-Factor analysis.")
 
-# --- Analysis Functions ---
+# --- UPDATED Analysis Functions ---
 def run_analysis(pdb_path):
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure("protein", pdb_path)
     model = structure[0]
     
-    # Check for DSSP executable on Linux server
+    # Check for DSSP executable (Streamlit uses mkdssp or dssp)
     executable = "mkdssp" if shutil.which("mkdssp") else "dssp"
 
     try:
-        dssp = DSSP(model, pdb_path, dssp=executable)
+        # We try with file_type="PDB" first to support DSSP 4+
+        dssp = DSSP(model, pdb_path, dssp=executable, file_type="PDB")
     except Exception as e:
-        st.error(f"DSSP computation failed: {e}")
-        return None
+        # Fallback for older DSSP versions if the first attempt fails
+        try:
+            dssp = DSSP(model, pdb_path, dssp=executable)
+        except Exception as e2:
+            st.error(f"DSSP computation failed: {e2}")
+            return None
 
     res_data = []
+    # Identify the first chain automatically
     target_chain = list(model.child_dict.keys())[0]
 
     for key in dssp.keys():
@@ -50,6 +56,13 @@ def run_analysis(pdb_path):
 
     df = pd.DataFrame(res_data)
     if df.empty: return None
+
+    # Normalization & Scoring (B-Factor + rSASA)
+    b_min, b_max = df['B_Factor'].min(), df['B_Factor'].max()
+    df['Norm_B'] = (df['B_Factor'] - b_min) / (b_max - b_min) * 100 if b_max != b_min else 0
+    df['Hotspot_Score'] = (0.5 * df['Norm_B']) + (0.5 * (df['rSASA'] * 100))
+    
+    return df
 
     # Normalization & Scoring
     df['Norm_B'] = (df['B_Factor'] - df['B_Factor'].min()) / (df['B_Factor'].max() - df['B_Factor'].min()) * 100
