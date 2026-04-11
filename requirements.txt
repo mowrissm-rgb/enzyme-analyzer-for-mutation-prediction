@@ -1,7 +1,5 @@
 biopython
 pandas
-numpy
 matplotlib
 python-docx
 streamlit
-biopython-dssp
