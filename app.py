@@ -19,14 +19,15 @@ def run_analysis(pdb_path):
     structure = parser.get_structure("protein", pdb_path)
     model = structure[0]
     
-    # Check for DSSP executable (Streamlit uses mkdssp or dssp)
+    # Identify the correct executable on the Linux server
     executable = "mkdssp" if shutil.which("mkdssp") else "dssp"
 
     try:
-        # We try with file_type="PDB" first to support DSSP 4+
+        # We add file_type="PDB" to support the newer DSSP 4.x versions
+        # that are standard on modern Linux servers.
         dssp = DSSP(model, pdb_path, dssp=executable, file_type="PDB")
     except Exception as e:
-        # Fallback for older DSSP versions if the first attempt fails
+        # Fallback to the standard command if file_type is not supported
         try:
             dssp = DSSP(model, pdb_path, dssp=executable)
         except Exception as e2:
@@ -34,7 +35,7 @@ def run_analysis(pdb_path):
             return None
 
     res_data = []
-    # Identify the first chain automatically
+    # Automatically grab the first chain (e.g., Chain A)
     target_chain = list(model.child_dict.keys())[0]
 
     for key in dssp.keys():
@@ -57,11 +58,10 @@ def run_analysis(pdb_path):
     df = pd.DataFrame(res_data)
     if df.empty: return None
 
-    # Normalization & Scoring (B-Factor + rSASA)
+    # Normalization & Hotspot Scoring
     b_min, b_max = df['B_Factor'].min(), df['B_Factor'].max()
     df['Norm_B'] = (df['B_Factor'] - b_min) / (b_max - b_min) * 100 if b_max != b_min else 0
     df['Hotspot_Score'] = (0.5 * df['Norm_B']) + (0.5 * (df['rSASA'] * 100))
-    
     return df
 
     # Normalization & Scoring
