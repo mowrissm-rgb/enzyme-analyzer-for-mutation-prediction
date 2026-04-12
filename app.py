@@ -1,12 +1,14 @@
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
+import matplotlib.pyplot as plt
 from docx import Document
 from docx.shared import Inches
 import io
 
-# --- 1. CORE LOGIC ---
+# --- 1. CORE LOGIC: Mutation Suggestions ---
 def get_top_6_suggestions(original_res):
+    """Provides 6 suggestions based on biochemical similarity."""
     suggestions_map = {
         'GLY': 'ALA, PRO, SER, VAL, ILE, LEU',
         'ALA': 'VAL, LEU, ILE, SER, THR, MET',
@@ -20,34 +22,34 @@ def get_top_6_suggestions(original_res):
     }
     return suggestions_map.get(original_res.upper(), suggestions_map['DEFAULT'])
 
-# --- 2. PROFESSIONAL REPORT ---
-def generate_professional_report(pdb_id, df, fig):
+# --- 2. PROFESSIONAL REPORT GENERATOR ---
+def generate_professional_report(pdb_id, df):
     doc = Document()
     doc.add_heading(f'Enzyme Mutation Strategy Report: {pdb_id}', 0)
     
     doc.add_heading('1. Methodology', level=1)
-    doc.add_paragraph("This pipeline identifies structural mutation hotspots by integrating Solvent Accessible Surface Area (SASA) via the Shrake-Rupley algorithm and B-factor flexibility analysis.")
+    doc.add_paragraph("This pipeline identifies structural mutation hotspots by integrating SASA and B-factor flexibility analysis.")
     
     doc.add_heading('2. Scoring Formula', level=1)
     doc.add_paragraph('Score = (w1 × Normalized SASA) + (w2 × Normalized B-factor)')
     
-    doc.add_heading('Where:', level=2)
-    defs = [
-        ("w1 / w2", "Weighting factors (Standard: 0.5/0.5)."),
-        ("Normalized SASA", "Relative solvent accessibility (0-100 scale)."),
-        ("Normalized B-factor", "Atomic displacement parameter for local chain flexibility.")
-    ]
-    for term, definition in defs:
-        p = doc.add_paragraph(style='List Bullet')
-        p.add_run(f'{term}: ').bold = True
-        p.add_run(definition)
-
     doc.add_heading('3. Structural Hotspot Landscape', level=1)
-    try:
-        img_bytes = fig.to_image(format="png", engine="kaleido", width=1000, height=450)
-        doc.add_picture(io.BytesIO(img_bytes), width=Inches(6))
-    except Exception:
-        doc.add_paragraph("[Graph rendering skipped due to environment constraints. Please check dependencies.]")
+    
+    # MATPLOTLIB VERSION FOR DOCX (Red line, Green fill)
+    plt.figure(figsize=(10, 4))
+    plt.plot(df['Pos'], df['Score'], color='#FF0000', linewidth=1.5) # Red Line
+    plt.fill_between(df['Pos'], df['Score'], 0, color='#90EE90', alpha=0.5) # Light Green Fill
+    plt.xlabel('Residue Position')
+    plt.ylabel('Hotspot Score')
+    plt.title(f'Structural Hotspot Landscape: {pdb_id}')
+    plt.grid(axis='y', linestyle='--', alpha=0.3)
+    
+    img_stream = io.BytesIO()
+    plt.savefig(img_stream, format='png', bbox_inches='tight', dpi=150)
+    plt.close()
+    img_stream.seek(0)
+    
+    doc.add_picture(img_stream, width=Inches(6))
 
     doc.add_heading('4. Mutation Candidate Analysis', level=1)
     table = doc.add_table(rows=1, cols=4)
@@ -57,58 +59,69 @@ def generate_professional_report(pdb_id, df, fig):
 
     for _, row in df.iterrows():
         cells = table.add_row().cells
-        cells[0].text, cells[1].text = str(row['Pos']), str(row['Res'])
-        cells[2].text, cells[3].text = f"{row['Score']:.2f}", row['Top 6 Suggestions']
+        cells[0].text = str(row['Pos'])
+        cells[1].text = str(row['Res'])
+        cells[2].text = f"{row['Score']:.2f}"
+        cells[3].text = row['Top 6 Suggestions']
 
     bio = io.BytesIO()
     doc.save(bio)
     bio.seek(0)
     return bio
 
-# --- 3. STREAMLIT UI ---
+# --- 3. STREAMLIT INTERFACE ---
 st.set_page_config(page_title="Enzyme Pipeline", layout="wide")
 st.title("🧬 Enzyme Engineering & Mutation Pipeline")
 
 with st.sidebar:
-    st.header("Settings")
+    st.header("Project Configuration")
     input_mode = st.radio("Input Method", ["Upload PDB File", "Fetch by PDB ID"])
-    pdb_id = st.text_input("Project ID", value="4TKX")
-    if input_mode == "Upload PDB File":
-        uploaded_file = st.file_uploader("Upload PDB", type=["pdb"])
-    run_btn = st.button("🚀 Run Analysis", use_container_width=True)
+    pdb_id_display = st.text_input("Project ID", value="4TKX")
+    run_btn = st.button("🚀 Run Full Analysis", use_container_width=True)
 
 if 'df_results' in st.session_state:
     df = st.session_state.df_results.sort_values(by='Pos')
     df['Top 6 Suggestions'] = df['Res'].apply(get_top_6_suggestions)
 
-    t1, t2, t3 = st.tabs(["📊 Landscape", "📋 Table", "📑 Report"])
+    tab1, tab2, tab3 = st.tabs(["📊 Web Dashboard", "📋 Mutation Table", "📑 Export Report"])
 
-    with t1:
-        st.subheader(f"Hotspot Landscape: {pdb_id}")
+    with tab1:
+        st.subheader(f"Structural Hotspot Landscape: {pdb_id_display}")
+        # PLOTLY VERSION FOR WEB (Red line, Green fill)
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=df['Pos'], y=df['Score'], mode='lines', fill='tozeroy',
-            line=dict(color='rgba(135, 131, 216, 1)', width=2),
-            fillcolor='rgba(173, 216, 230, 0.4)'
+            x=df['Pos'], y=df['Score'], mode='lines', 
+            fill='tozeroy', 
+            line=dict(color='red', width=2),       # Red Line
+            fillcolor='rgba(0, 255, 0, 0.3)',      # Transparent Green Fill
+            name='Hotspot Score'
         ))
-        fig.update_layout(xaxis_title="Position", yaxis_title="Score", template="plotly_white")
+        fig.update_layout(
+            xaxis_title="Residue Position", 
+            yaxis_title="Hotspot Score", 
+            template="plotly_white",
+            hovermode="x unified"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
-    with t2:
+    with tab2:
+        st.subheader("Optimized Mutation Candidates")
         try:
-            st.dataframe(df.style.background_gradient(subset=['Score'], cmap='YlGnBu'), use_container_width=True, height="auto")
+            st.dataframe(df.style.background_gradient(subset=['Score'], cmap='RdYlGn'), use_container_width=True, height="auto")
         except:
             st.dataframe(df, use_container_width=True)
 
-    with t3:
-        report = generate_professional_report(pdb_id, df, fig)
-        st.download_button("📥 Download Report", data=report, file_name=f"{pdb_id}_Report.docx")
+    with tab3:
+        st.subheader("Final Documentation")
+        report_file = generate_professional_report(pdb_id_display, df)
+        st.download_button("📥 Download .docx Report", data=report_file, file_name=f"{pdb_id_display}_Report.docx")
 
 if run_btn:
+    # Dummy data for demonstration
     data = {
-        'Pos': [575, 574, 573, 576, 572, 571, 577, 338, 229, 339],
-        'Res': ['HIS', 'THR', 'ILE', 'ILE', 'ASN', 'GLY', 'GLY', 'GLY', 'ASP', 'ASP'],
-        'Score': [65.78, 64.33, 62.73, 59.53, 57.92, 55.11, 53.08, 52.83, 52.29, 50.47]
+        'Pos': [229, 338, 339, 571, 572, 573, 574, 575, 576, 577],
+        'Res': ['ASP', 'GLY', 'ASP', 'GLY', 'ASN', 'ILE', 'THR', 'HIS', 'ILE', 'GLY'],
+        'Score': [52.29, 52.83, 50.47, 55.11, 57.92, 62.73, 64.33, 65.78, 59.53, 53.08]
     }
     st.session_state.df_results = pd.DataFrame(data)
     st.rerun()
