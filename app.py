@@ -25,25 +25,28 @@ def get_top_6_suggestions(original_res):
 # --- 2. REPORT GENERATION: Professional Docx ---
 def generate_professional_report(pdb_id, df, fig):
     doc = Document()
-    doc.add_heading(f'Enzyme Mutation Strategy Report: {pdb_id}', 0) [cite: 4]
+    doc.add_heading(f'Enzyme Mutation Strategy Report: {pdb_id}', 0)
     
-    # 1. Detailed Methodology
-    doc.add_heading('1. Methodology', level=1) [cite: 5]
+    # 1. Methodology
+    doc.add_heading('1. Methodology', level=1)
     doc.add_paragraph(
         "This pipeline identifies structural mutation hotspots by integrating Solvent Accessible "
-        "Surface Area (SASA) via the Shrake-Rupley algorithm and B-factor flexibility analysis[cite: 6]. "
-        "By targeting residues with high exposure and thermal displacement, we can optimize "
-        "enzymatic potential while maintaining structural integrity."
+        "Surface Area (SASA) via the Shrake-Rupley algorithm and B-factor flexibility analysis. "
+        "Targeting residues with high exposure and thermal displacement allows for the optimization "
+        "of enzymatic potential while maintaining structural integrity."
     )
     
-    # 2. Formula & Expanded Definitions
-    doc.add_heading('2. Scoring Formula', level=1) [cite: 7]
-    doc.add_paragraph('Score = (w1 × Normalized SASA) + (w2 × Normalized B-factor)') [cite: 8]
-    
+    # 2. Scoring Formula & Definitions
+    doc.add_heading('2. Scoring Formula', level=1)
+    formula = doc.add_paragraph()
+    run = formula.add_run('Score = (w1 × Normalized SASA) + (w2 × Normalized B-factor)')
+    run.bold = True
+    run.italic = True
+
     doc.add_heading('Where:', level=2)
     defs = [
         ("w1 / w2", "Weighting factors assigned to exposure and flexibility (Standard: 0.5/0.5)."),
-        ("Normalized SASA", "The relative solvent accessibility of the residue (0-100 scale)."),
+        ("Normalized SASA", "The relative solvent accessibility of the residue calculated via Shrake-Rupley (0-100 scale)."),
         ("Normalized B-factor", "The atomic displacement parameter indicating local chain flexibility.")
     ]
     for term, definition in defs:
@@ -51,35 +54,34 @@ def generate_professional_report(pdb_id, df, fig):
         p.add_run(f'{term}: ').bold = True
         p.add_run(definition)
 
-    # 3. Embedding the Refined Graph
+    # 3. Embedded Graph
     doc.add_heading('3. Structural Hotspot Landscape', level=1)
-    # Saves the shaded graph as a high-res PNG for the document
     img_bytes = fig.to_image(format="png", width=1000, height=450)
-    doc.add_picture(io.BytesIO(img_bytes), width=Inches(6.2))
+    doc.add_picture(io.BytesIO(img_bytes), width=Inches(6))
 
     # 4. Mutation Table
-    doc.add_heading('4. Mutation Candidate Analysis', level=1) [cite: 9]
+    doc.add_heading('4. Mutation Candidate Analysis', level=1)
     table = doc.add_table(rows=1, cols=4)
     table.style = 'Light Shading Accent 1'
     hdr_cells = table.rows[0].cells
-    headers = ['Pos', 'Res', 'Score', 'Top 6 Suggestions'] [cite: 10]
+    headers = ['Position', 'Residue', 'Hotspot Score', 'Top 6 Suggestions']
     for i, h in enumerate(headers):
         hdr_cells[i].text = h
 
     for _, row in df.iterrows():
         row_cells = table.add_row().cells
-        row_cells[0].text = str(row['Pos']) [cite: 10]
-        row_cells[1].text = str(row['Res']) [cite: 10]
-        row_cells[2].text = f"{row['Score']:.2f}" [cite: 10]
-        row_cells[3].text = row['Top 6 Suggestions'] [cite: 10]
+        row_cells[0].text = str(row['Pos'])
+        row_cells[1].text = str(row['Res'])
+        row_cells[2].text = f"{row['Score']:.2f}"
+        row_cells[3].text = row['Top 6 Suggestions']
 
     # 5. References
     doc.add_page_break()
-    doc.add_heading('References', level=1) [cite: 11]
+    doc.add_heading('References', level=1)
     refs = [
-        "Shrake, A., & Rupley, J. A. (1973). Environment and exposure to solvent of protein atoms. J. Mol. Biol. [cite: 12]",
-        "Cock, P. J., et al. (2009). Biopython: tools for computational biology. Bioinformatics. [cite: 13]",
-        "Schrödinger Release 2024-1: BioLuminate, Schrödinger, LLC, New York, NY. [cite: 14]",
+        "Shrake, A., & Rupley, J. A. (1973). Environment and exposure to solvent of protein atoms. J. Mol. Biol.",
+        "Cock, P. J., et al. (2009). Biopython: tools for computational biology. Bioinformatics.",
+        "Schrödinger Release 2024-1: BioLuminate, Schrödinger, LLC, New York, NY.",
         "Eyal, E., et al. (2005). The use of electrostatic parameters in predictor of residue flexibility. Proteins."
     ]
     for ref in refs:
@@ -96,73 +98,71 @@ st.title("🧬 Enzyme Engineering & Mutation Pipeline")
 
 with st.sidebar:
     st.header("Project Configuration")
-    pdb_input = st.text_input("Enter PDB ID", value="4TKX")
+    
+    # RESTORED: PDB Upload & ID Options
+    input_mode = st.radio("Input Method", ["Upload PDB File", "Fetch by PDB ID"])
+    
+    pdb_id_display = "Custom_Upload"
+    if input_mode == "Upload PDB File":
+        uploaded_file = st.file_uploader("Choose a PDB file", type=["pdb"])
+    else:
+        pdb_id_display = st.text_input("Enter PDB ID", value="4TKX")
+    
     st.divider()
     run_btn = st.button("🚀 Run Full Analysis", use_container_width=True)
 
 if 'df_results' not in st.session_state:
-    st.info("Please enter a PDB ID and run the analysis to view results.")
+    st.info("Please upload a file or enter an ID and run the analysis to view results.")
 else:
-    # SORTING: Fixes the graph line so it follows the residue order correctly
     df = st.session_state.df_results.sort_values(by='Pos')
     df['Top 6 Suggestions'] = df['Res'].apply(get_top_6_suggestions)
 
     tab1, tab2, tab3 = st.tabs(["📊 Analysis Dashboard", "📋 Mutation Table", "📑 Export Report"])
 
- with tab1:
-    st.subheader("Structural Hotspot Landscape")
-    # Ensuring the data is sorted by position for a clean, continuous line
-    df_sorted = df.sort_values(by='Pos') 
+    with tab1:
+        st.subheader(f"Structural Hotspot Landscape: {pdb_id_display}")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df['Pos'], 
+            y=df['Score'], 
+            mode='lines',
+            fill='tozeroy', 
+            line=dict(color='rgba(135, 131, 216, 1)', width=2),
+            fillcolor='rgba(173, 216, 230, 0.4)',
+            name='Hotspot Score'
+        ))
+        fig.update_layout(
+            xaxis_title="Residue Position",
+            yaxis_title="Hotspot Score",
+            template="plotly_white",
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-    fig = go.Figure()
-    # Adding the trace with the 'tozeroy' fill to match your reference image
-    fig.add_trace(go.Scatter(
-        x=df_sorted['Pos'], 
-        y=df_sorted['Score'], 
-        mode='lines',
-        fill='tozeroy', 
-        line=dict(color='rgba(135, 131, 216, 1)', width=2), # Purple/Blue matching your graph
-        fillcolor='rgba(173, 216, 230, 0.4)', # Light blue transparent fill
-        name='Hotspot Score'
-    ))
-
-    fig.update_layout(
-        title=f"Structural Hotspot Landscape: {pdb_input}",
-        xaxis_title="Residue Position",
-        yaxis_title="Hotspot Score",
-        template="plotly_white", # Clean white background matching your screenshot
-        hovermode="x unified"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-  with tab2:
-    st.subheader("Optimized Mutation Candidates")
-    # Using "auto" ensures the table fits the data perfectly with no empty rows
-    st.dataframe(
-        df.style.background_gradient(subset=['Score'], cmap='YlGnBu'),
-        use_container_width=True,
-        height="auto" 
-    )
+    with tab2:
+        st.subheader("Optimized Mutation Candidates")
+        st.dataframe(
+            df.style.background_gradient(subset=['Score'], cmap='YlGnBu'),
+            use_container_width=True,
+            height="auto" 
+        )
 
     with tab3:
         st.subheader("Final Documentation")
-        st.write("Generate a professional research report including the landscape graph, formula, and methodology.")
-        
-        # We pass 'fig' here so it can be saved into the Word doc
-        report_file = generate_professional_report(pdb_input, df, fig)
-        
+        report_file = generate_professional_report(pdb_id_display, df, fig)
         st.download_button(
-            label=f"📥 Download {pdb_input}_Report.docx",
+            label=f"📥 Download {pdb_id_display}_Report.docx",
             data=report_file,
-            file_name=f"{pdb_input}_Mutation_Strategy.docx",
+            file_name=f"{pdb_id_display}_Mutation_Strategy.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
 
 if run_btn:
-    # Dummy Data for demonstration - actual processing logic would replace this
+    # Dummy Data for demonstration
     data = {
-        'Pos': [575, 574, 573, 576, 572, 571],
-        'Res': ['HIS', 'THR', 'ILE', 'ILE', 'ASN', 'GLY'],
-        'Score': [65.78, 64.33, 62.73, 59.53, 57.92, 55.11]
+        'Pos': [229, 338, 339, 571, 572, 573, 574, 575, 576, 577],
+        'Res': ['ASP', 'GLY', 'ASP', 'GLY', 'ASN', 'ILE', 'THR', 'HIS', 'ILE', 'GLY'],
+        'Score': [52.29, 52.83, 50.47, 55.11, 57.92, 62.73, 64.33, 65.78, 59.53, 53.08]
     }
     st.session_state.df_results = pd.DataFrame(data)
     st.rerun()
