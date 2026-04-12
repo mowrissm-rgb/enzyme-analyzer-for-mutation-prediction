@@ -131,14 +131,14 @@ else:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    with tab2:
-        st.subheader("Optimized Mutation Candidates")
-        # height=None removes the empty rows/space from the interface
-        st.dataframe(
-            df.style.background_gradient(subset=['Score'], cmap='YlGnBu'),
-            use_container_width=True,
-            height=None
-        )
+  with tab2:
+    st.subheader("Optimized Mutation Candidates")
+    # Using "auto" ensures the table fits the data perfectly with no empty rows
+    st.dataframe(
+        df.style.background_gradient(subset=['Score'], cmap='YlGnBu'),
+        use_container_width=True,
+        height="auto" 
+    )
 
     with tab3:
         st.subheader("Final Documentation")
