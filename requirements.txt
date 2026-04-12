@@ -1,5 +1,5 @@
-biopython
-pandas
-matplotlib
-python-docx
 streamlit
+pandas
+plotly
+python-docx
+biopython
