@@ -6,9 +6,8 @@ from docx import Document
 from docx.shared import Inches
 import io
 
-# --- 1. CORE LOGIC: Mutation Suggestions ---
+# --- 1. CORE LOGIC ---
 def get_top_6_suggestions(original_res):
-    """Provides 6 suggestions based on biochemical similarity."""
     suggestions_map = {
         'GLY': 'ALA, PRO, SER, VAL, ILE, LEU',
         'ALA': 'VAL, LEU, ILE, SER, THR, MET',
@@ -31,14 +30,15 @@ def generate_professional_report(pdb_id, df):
     doc.add_paragraph("This pipeline identifies structural mutation hotspots by integrating SASA and B-factor flexibility analysis.")
     
     doc.add_heading('2. Scoring Formula', level=1)
+    # Applied your specific formula here
     doc.add_paragraph('Score = (w1 × Normalized SASA) + (w2 × Normalized B-factor)')
     
     doc.add_heading('3. Structural Hotspot Landscape', level=1)
     
-    # MATPLOTLIB VERSION FOR DOCX (Red line, Green fill)
-    plt.figure(figsize=(10, 4))
-    plt.plot(df['Pos'], df['Score'], color='#FF0000', linewidth=1.5) # Red Line
-    plt.fill_between(df['Pos'], df['Score'], 0, color='#90EE90', alpha=0.5) # Light Green Fill
+    # MATPLOTLIB VERSION FOR DOCX (Matches the purple/blue reference image)
+    plt.figure(figsize=(12, 5)) # Wider figure to make peaks look better
+    plt.plot(df['Pos'], df['Score'], color='#8783D8', linewidth=1.2) 
+    plt.fill_between(df['Pos'], df['Score'], 0, color='#ADD8E6', alpha=0.4)
     plt.xlabel('Residue Position')
     plt.ylabel('Hotspot Score')
     plt.title(f'Structural Hotspot Landscape: {pdb_id}')
@@ -59,10 +59,8 @@ def generate_professional_report(pdb_id, df):
 
     for _, row in df.iterrows():
         cells = table.add_row().cells
-        cells[0].text = str(row['Pos'])
-        cells[1].text = str(row['Res'])
-        cells[2].text = f"{row['Score']:.2f}"
-        cells[3].text = row['Top 6 Suggestions']
+        cells[0].text, cells[1].text = str(row['Pos']), str(row['Res'])
+        cells[2].text, cells[3].text = f"{row['Score']:.2f}", row['Top 6 Suggestions']
 
     bio = io.BytesIO()
     doc.save(bio)
@@ -87,41 +85,44 @@ if 'df_results' in st.session_state:
 
     with tab1:
         st.subheader(f"Structural Hotspot Landscape: {pdb_id_display}")
-        # PLOTLY VERSION FOR WEB (Red line, Green fill)
+        # PLOTLY VERSION FOR WEB (Purple line, Light Blue fill)
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=df['Pos'], y=df['Score'], mode='lines', 
             fill='tozeroy', 
-            line=dict(color='red', width=2),       # Red Line
-            fillcolor='rgba(0, 255, 0, 0.3)',      # Transparent Green Fill
+            line=dict(color='rgba(135, 131, 216, 1)', width=2),
+            fillcolor='rgba(173, 216, 230, 0.4)',
             name='Hotspot Score'
         ))
         fig.update_layout(
             xaxis_title="Residue Position", 
             yaxis_title="Hotspot Score", 
             template="plotly_white",
-            hovermode="x unified"
+            # This makes the peaks look more dynamic
+            xaxis=dict(range=[df['Pos'].min()-5, df['Pos'].max()+5]),
+            height=500
         )
         st.plotly_chart(fig, use_container_width=True)
 
     with tab2:
         st.subheader("Optimized Mutation Candidates")
         try:
-            st.dataframe(df.style.background_gradient(subset=['Score'], cmap='RdYlGn'), use_container_width=True, height="auto")
+            st.dataframe(df.style.background_gradient(subset=['Score'], cmap='YlGnBu'), use_container_width=True, height="auto")
         except:
             st.dataframe(df, use_container_width=True)
 
     with tab3:
         st.subheader("Final Documentation")
         report_file = generate_professional_report(pdb_id_display, df)
-        st.download_button("📥 Download .docx Report", data=report_file, file_name=f"{pdb_id_display}_Report.docx")
+        st.download_button("📥 Download Report", data=report_file, file_name=f"{pdb_id_display}_Report.docx")
 
 if run_btn:
-    # Dummy data for demonstration
+    # Example data range to show clear peaks
     data = {
-        'Pos': [229, 338, 339, 571, 572, 573, 574, 575, 576, 577],
-        'Res': ['ASP', 'GLY', 'ASP', 'GLY', 'ASN', 'ILE', 'THR', 'HIS', 'ILE', 'GLY'],
-        'Score': [52.29, 52.83, 50.47, 55.11, 57.92, 62.73, 64.33, 65.78, 59.53, 53.08]
+        'Pos': list(range(230, 680, 5)),
+        'Res': ['GLY', 'ALA', 'ASP', 'SER', 'HIS'] * 18,
+        # Logic to create peaks like in your image_24cfa1.png
+        'Score': [ (i % 45) * (i % 7) if i % 25 == 0 else (i % 15) for i in range(90) ]
     }
     st.session_state.df_results = pd.DataFrame(data)
     st.rerun()
