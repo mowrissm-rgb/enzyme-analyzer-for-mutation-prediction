@@ -25,50 +25,44 @@ def get_top_6_suggestions(original_res):
 # --- 2. REPORT GENERATION: Professional Docx ---
 def generate_professional_report(pdb_id, df, fig):
     doc = Document()
-    
-    # Header
     doc.add_heading(f'Enzyme Mutation Strategy Report: {pdb_id}', 0) [cite: 4]
     
-    # 1. Methodology
+    # 1. Detailed Methodology
     doc.add_heading('1. Methodology', level=1) [cite: 5]
     doc.add_paragraph(
         "This pipeline identifies structural mutation hotspots by integrating Solvent Accessible "
         "Surface Area (SASA) via the Shrake-Rupley algorithm and B-factor flexibility analysis[cite: 6]. "
-        "Targeting residues with high exposure and thermal displacement allows for the optimization "
-        "of enzymatic potential while maintaining structural integrity."
+        "By targeting residues with high exposure and thermal displacement, we can optimize "
+        "enzymatic potential while maintaining structural integrity."
     )
     
-    # 2. Scoring Formula & "Where" Section
+    # 2. Formula & Expanded Definitions
     doc.add_heading('2. Scoring Formula', level=1) [cite: 7]
-    formula = doc.add_paragraph()
-    run = formula.add_run('Score = (w1 × Normalized SASA) + (w2 × Normalized B-factor)') [cite: 8]
-    run.bold = True
-    run.italic = True
-
+    doc.add_paragraph('Score = (w1 × Normalized SASA) + (w2 × Normalized B-factor)') [cite: 8]
+    
     doc.add_heading('Where:', level=2)
     defs = [
         ("w1 / w2", "Weighting factors assigned to exposure and flexibility (Standard: 0.5/0.5)."),
-        ("Normalized SASA", "The relative solvent accessibility of the residue calculated via Shrake-Rupley (0-100 scale)."),
-        ("Normalized B-factor", "The atomic displacement parameter representing local chain flexibility.")
+        ("Normalized SASA", "The relative solvent accessibility of the residue (0-100 scale)."),
+        ("Normalized B-factor", "The atomic displacement parameter indicating local chain flexibility.")
     ]
     for term, definition in defs:
         p = doc.add_paragraph(style='List Bullet')
         p.add_run(f'{term}: ').bold = True
         p.add_run(definition)
 
-    # 3. Embedded Graph
+    # 3. Embedding the Refined Graph
     doc.add_heading('3. Structural Hotspot Landscape', level=1)
-    # Converts Plotly figure to a high-res PNG for Word
-    img_bytes = fig.to_image(format="png", width=1000, height=500)
-    doc.add_picture(io.BytesIO(img_bytes), width=Inches(6))
+    # Saves the shaded graph as a high-res PNG for the document
+    img_bytes = fig.to_image(format="png", width=1000, height=450)
+    doc.add_picture(io.BytesIO(img_bytes), width=Inches(6.2))
 
-    # 4. Clean Mutation Table
+    # 4. Mutation Table
     doc.add_heading('4. Mutation Candidate Analysis', level=1) [cite: 9]
     table = doc.add_table(rows=1, cols=4)
     table.style = 'Light Shading Accent 1'
-    
     hdr_cells = table.rows[0].cells
-    headers = ['Position', 'Residue', 'Hotspot Score', 'Top 6 Suggestions'] [cite: 10]
+    headers = ['Pos', 'Res', 'Score', 'Top 6 Suggestions'] [cite: 10]
     for i, h in enumerate(headers):
         hdr_cells[i].text = h
 
@@ -115,22 +109,31 @@ else:
 
     tab1, tab2, tab3 = st.tabs(["📊 Analysis Dashboard", "📋 Mutation Table", "📑 Export Report"])
 
-    with tab1:
-        st.subheader("Structural Hotspot Landscape")
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df['Pos'], y=df['Score'], mode='lines+markers',
-            fill='tozeroy', line=dict(color='#1f77b4', width=2),
-            name='Flexibility Score'
-        ))
-        fig.update_layout(
-            hovermode="x unified",
-            xaxis_title="Residue Position",
-            yaxis_title="Mutation Score",
-            template="plotly_white"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+ with tab1:
+    st.subheader("Structural Hotspot Landscape")
+    # Ensuring the data is sorted by position for a clean, continuous line
+    df_sorted = df.sort_values(by='Pos') 
 
+    fig = go.Figure()
+    # Adding the trace with the 'tozeroy' fill to match your reference image
+    fig.add_trace(go.Scatter(
+        x=df_sorted['Pos'], 
+        y=df_sorted['Score'], 
+        mode='lines',
+        fill='tozeroy', 
+        line=dict(color='rgba(135, 131, 216, 1)', width=2), # Purple/Blue matching your graph
+        fillcolor='rgba(173, 216, 230, 0.4)', # Light blue transparent fill
+        name='Hotspot Score'
+    ))
+
+    fig.update_layout(
+        title=f"Structural Hotspot Landscape: {pdb_input}",
+        xaxis_title="Residue Position",
+        yaxis_title="Hotspot Score",
+        template="plotly_white", # Clean white background matching your screenshot
+        hovermode="x unified"
+    )
+    st.plotly_chart(fig, use_container_width=True)
   with tab2:
     st.subheader("Optimized Mutation Candidates")
     # Using "auto" ensures the table fits the data perfectly with no empty rows
