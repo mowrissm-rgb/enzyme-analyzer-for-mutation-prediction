@@ -4,4 +4,3 @@ plotly
 python-docx
 biopython
 matplotlib
-kaleido==0.1.0post1
