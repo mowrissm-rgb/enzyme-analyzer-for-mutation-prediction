@@ -19,57 +19,74 @@ def get_top_6_suggestions(original_res):
         'DEFAULT': 'ALA, VAL, LEU, ILE, SER, THR'
     }
     return suggestions_map.get(original_res.upper(), suggestions_map['DEFAULT'])
-
-# --- 2. REPORT GENERATION: Professional Docx ---
-def generate_professional_report(pdb_id, df, plot_image=None):
+def generate_professional_report(pdb_id, df, fig):
     doc = Document()
     
     # Dynamic Title
-    title = doc.add_heading(f'Enzyme Mutation Strategy Report: {pdb_id}', 0)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_heading(f'Enzyme Mutation Strategy Report: {pdb_id}', 0) [cite: 4]
     
-    # Methodology & Formula Section
-    doc.add_heading('1. Methodology', level=1)
-    para = doc.add_paragraph(
-        'This pipeline identifies structural mutation hotspots by integrating '
-        'Solvent Accessible Surface Area (SASA) via the Shrake-Rupley algorithm '
-        'and B-factor flexibility analysis.'
+    # 1. Expanded Methodology
+    doc.add_heading('1. Methodology', level=1) [cite: 5]
+    doc.add_paragraph(
+        "This pipeline identifies structural mutation hotspots by integrating Solvent Accessible "
+        "Surface Area (SASA) via the Shrake-Rupley algorithm and B-factor flexibility analysis[cite: 6]. "
+        "By targeting residues with high exposure and thermal displacement, we can optimize "
+        "enzymatic potential while maintaining structural integrity."
     )
     
-    # Add Formula
-    doc.add_heading('2. Scoring Formula', level=2)
-    formula_para = doc.add_paragraph()
-    run = formula_para.add_run('Score = (w1 × Normalized SASA) + (w2 × Normalized B-factor)')
-    run.italic = True
-    run.font.size = Pt(12)
-
-    # Table with "Cooler" Formatting
-    doc.add_heading('3. Mutation Candidate Analysis', level=1)
-    table = doc.add_table(rows=1, cols=4)
-    table.style = 'Light Shading Accent 1' # Professional striped style
+    # 2. Detailed Formula & Definitions
+    doc.add_heading('2. Scoring Formula', level=1) [cite: 7]
+    doc.add_paragraph('Score = (w1 × Normalized SASA) + (w2 × Normalized B-factor)') [cite: 8]
     
+    doc.add_heading('Where:', level=2)
+    defs = [
+        ("w1 / w2", "Weighting factors assigned to exposure and flexibility (Standard: 0.5)."),
+        ("Normalized SASA", "The relative solvent accessibility of the residue (0-100 scale)."),
+        ("Normalized B-factor", "The atomic displacement parameter indicating local chain flexibility.")
+    ]
+    for term, definition in defs:
+        p = doc.add_paragraph(style='List Bullet')
+        p.add_run(f'{term}: ').bold = True
+        p.add_run(definition)
+
+    # 3. Embedded Graph
+    doc.add_heading('3. Structural Hotspot Landscape', level=1)
+    # This converts the web graph into a high-res image for the Word file
+    img_bytes = fig.to_image(format="png", width=800, height=400)
+    doc.add_picture(io.BytesIO(img_bytes), width=Inches(6))
+
+    # 4. Clean Mutation Table
+    doc.add_heading('4. Mutation Candidate Analysis', level=1) [cite: 9]
+    table = doc.add_table(rows=1, cols=4)
+    table.style = 'Light Shading Accent 1'
     hdr_cells = table.rows[0].cells
-    for i, text in enumerate(['Position', 'Residue', 'Hotspot Score', 'Top 6 Suggestions']):
-        hdr_cells[i].text = text
-        hdr_cells[i].paragraphs[0].runs[0].font.bold = True
+    headers = ['Pos', 'Res', 'Score', 'Top 6 Suggestions'] [cite: 10]
+    for i, h in enumerate(headers):
+        hdr_cells[i].text = h
 
     for _, row in df.iterrows():
         row_cells = table.add_row().cells
-        row_cells[0].text = str(row['Pos'])
-        row_cells[1].text = str(row['Res'])
-        row_cells[2].text = f"{row['Score']:.2f}"
-        row_cells[3].text = get_top_6_suggestions(row['Res'])
+        row_cells[0].text = str(row['Pos']) [cite: 10]
+        row_cells[1].text = str(row['Res']) [cite: 10]
+        row_cells[2].text = f"{row['Score']:.2f}" [cite: 10]
+        row_cells[3].text = row['Top 6 Suggestions'] [cite: 10]
 
-    # References Section
+    # 5. Expanded References
     doc.add_page_break()
-    doc.add_heading('References', level=1)
+    doc.add_heading('References', level=1) [cite: 11]
     refs = [
-        'Shrake, A., & Rupley, J. A. (1973). Environment and exposure to solvent of protein atoms. J. Mol. Biol.',
-        'Cock, P. J., et al. (2009). Biopython: freely available Python tools for computational biology. Bioinformatics.',
-        'Schrödinger Release 2024-1: BioLuminate, Schrödinger, LLC, New York, NY.'
+        "Shrake, A., & Rupley, J. A. (1973). Environment and exposure to solvent of protein atoms. J. Mol. Biol. [cite: 12]",
+        "Cock, P. J., et al. (2009). Biopython: tools for computational biology. Bioinformatics. [cite: 13]",
+        "Schrödinger Release 2024-1: BioLuminate, Schrödinger, LLC, New York, NY. [cite: 14]",
+        "Eyal, E., et al. (2005). The use of electrostatic parameters in predictor of residue flexibility. Proteins."
     ]
     for ref in refs:
         doc.add_paragraph(ref, style='List Bullet')
+
+    bio = io.BytesIO()
+    doc.save(bio)
+    bio.seek(0)
+    return bio
 
     # Save to buffer for Streamlit download
     bio = io.BytesIO()
