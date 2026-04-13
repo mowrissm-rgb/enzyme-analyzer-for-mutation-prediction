@@ -161,22 +161,86 @@ with st.sidebar:
     pdb_id_display = st.text_input("Target PDB ID", value="4TKX")
     run_btn = st.button("🚀 RUN FULL ANALYSIS")
 
-# --- 5. ANALYSIS EXECUTION ---
+# --- 5. ANALYSIS EXECUTION (UPDATED FIX) ---
 if run_btn:
     status_placeholder = st.empty()
     
     with status_placeholder.container():
         st.markdown("<h3 style='text-align: center; color: #007BFF;'>Running Molecular Dynamics...</h3>", unsafe_allow_html=True)
         
-        # Check if Lottie loaded before displaying to prevent crash
         if lottie_analyze:
             st_lottie(lottie_analyze, height=250, key="main_loader")
         else:
             st.info("Computing structural hotspots... please wait.")
-            st.progress(40)
             
-        time.sleep(3) # Simulation of heavy computation
+        time.sleep(3) 
 
-    status_placeholder.empty() # Clear animation when done
+    # Generate simulation data
+    positions = list(range(230, 680))
+    base = np.random.normal(5, 2, len(positions))
+    peaks = np.zeros(len(positions))
+    peaks[::45] = np.random.uniform(80, 150, len(peaks[::45])) 
     
-    # Generate simulation
+    data = {
+        'Pos': positions,
+        'Res': [np.random.choice(['HIS', 'THR', 'ILE', 'ASN', 'GLY', 'ASP', 'ALA', 'PHE']) for _ in positions],
+        'Score': base + peaks
+    }
+    
+    # Save to session state
+    st.session_state.df_results = pd.DataFrame(data)
+    
+    # Clear the loading screen and force display of results
+    status_placeholder.empty()
+    st.rerun()
+
+# --- 6. DISPLAY RESULTS ---
+if 'df_results' in st.session_state:
+    # Animated arrow for the Export Center
+    st.markdown('<div class="download-indicator">⤵️</div>', unsafe_allow_html=True)
+    
+    df = st.session_state.df_results.sort_values(by='Pos')
+    df['Top 6 Suggestions'] = df['Res'].apply(get_top_6_suggestions)
+
+    tab1, tab2, tab3 = st.tabs(["📊 Visual Landscape", "📋 Candidate Table", "📥 Export Center"])
+
+    with tab1:
+        st.subheader("Structural Hotspot Landscape")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df['Pos'], y=df['Score'], mode='lines',
+            fill='tozeroy', line=dict(color='#007BFF', width=2),
+            fillcolor='rgba(0, 123, 255, 0.2)',
+            name='Hotspot Score'
+        ))
+        fig.update_layout(
+            paper_bgcolor='black', plot_bgcolor='black',
+            font_color='white', xaxis_title="Residue Position",
+            yaxis_title="Hotspot Score", height=500,
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with tab2:
+        st.subheader("Mutation Candidates")
+        st.dataframe(df.style.background_gradient(subset=['Score'], cmap='Blues'), use_container_width=True)
+
+    with tab3:
+        st.subheader("Research Documentation")
+        col_left, col_right = st.columns([0.6, 0.4])
+        
+        with col_left:
+            st.write("Generate a high-resolution DOCX report including the landscape graph and mutation suggestions.")
+        
+        with col_right:
+            if lottie_download:
+                st_lottie(lottie_download, height=120, key="dl_anim")
+            
+            report_file = generate_professional_report(pdb_id_display, df)
+            st.download_button(
+                label="📥 Download Research Report",
+                data=report_file,
+                file_name=f"Report_{pdb_id_display}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True
+            )
