@@ -65,14 +65,14 @@ st.markdown("""
     /* Animated Downward Arrow for Download */
     @keyframes bounce {
         0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(-10px); }
+        50% { transform: translateY(-15px); }
     }
 
     .download-indicator {
         position: fixed;
         top: 70px;
-        right: 40px;
-        font-size: 40px;
+        right: 45px;
+        font-size: 45px;
         color: #007BFF;
         animation: bounce 1.5s infinite;
         z-index: 1000;
@@ -81,18 +81,21 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Helper for Lottie Animations
+# --- 2. LOTTIE ANIMATION HELPER (WITH SAFETY GATES) ---
 def load_lottieurl(url: str):
     try:
-        r = requests.get(url)
-        return r.json() if r.status_code == 200 else None
-    except:
+        r = requests.get(url, timeout=5)
+        if r.status_code != 200:
+            return None
+        return r.json()
+    except Exception:
         return None
 
-lottie_analyze = load_lottieurl("https://assets10.lottiefiles.com/packages/lf20_m6cu96ze.json") # Computational Pulse
-lottie_download = load_lottieurl("https://assets5.lottiefiles.com/packages/lf20_ai9m8ywa.json") # Download Arrow
+# Load the animations (using stable lottie.host links)
+lottie_analyze = load_lottieurl("https://lottie.host/76e936b1-090c-4034-8977-16017366d6d4/X8q9f6R8A2.json") 
+lottie_download = load_lottieurl("https://lottie.host/80c6c739-166b-4e6f-998a-777c59c49d97/5K8uR6uR9a.json")
 
-# --- 2. CORE LOGIC ---
+# --- 3. CORE COMPUTATIONAL LOGIC ---
 def get_top_6_suggestions(original_res):
     suggestions_map = {
         'GLY': 'ALA, PRO, SER, VAL, ILE, LEU', 'ALA': 'VAL, LEU, ILE, SER, THR, MET',
@@ -116,8 +119,8 @@ def generate_professional_report(pdb_id, df):
     run = formula_p.add_run("Score = (w_SASA × [SASA_i / SASA_max]) + (w_B × [B_i / B_max])")
     run.bold = True
     
-    # Visualization for Report
-    plt.style.use('dark_background') # Match the app theme
+    # Plot for Report (Dark Style)
+    plt.style.use('dark_background')
     plt.figure(figsize=(12, 4))
     plt.plot(df['Pos'], df['Score'], color='#007BFF', linewidth=1.5) 
     plt.fill_between(df['Pos'], df['Score'], 0, color='#007BFF', alpha=0.2)
@@ -147,70 +150,33 @@ def generate_professional_report(pdb_id, df):
     bio.seek(0)
     return bio
 
-# --- 3. APP LAYOUT ---
+# --- 4. MAIN APP INTERFACE ---
 st.title("🧬 Enzyme Analysis Pipeline")
+st.markdown("<p style='color: #007BFF;'>Advanced Computational Hotspot Identification</p>", unsafe_allow_html=True)
 st.markdown("---")
 
 with st.sidebar:
     st.image("https://img.icons8.com/fluency/96/dna-helix.png")
-    st.header("Control Panel")
+    st.header("Project Configuration")
     pdb_id_display = st.text_input("Target PDB ID", value="4TKX")
-    run_btn = st.button("🚀 RUN ANALYSIS")
+    run_btn = st.button("🚀 RUN FULL ANALYSIS")
 
+# --- 5. ANALYSIS EXECUTION ---
 if run_btn:
-    with st.spinner("Processing Molecular Dynamics..."):
-        st_lottie(lottie_analyze, height=250, key="main_loader")
-        time.sleep(3) # Simulation delay
-        
-        positions = list(range(230, 680))
-        base = np.random.normal(5, 2, len(positions))
-        peaks = np.zeros(len(positions))
-        peaks[::45] = np.random.uniform(80, 150, len(peaks[::45])) 
-        
-        data = {
-            'Pos': positions,
-            'Res': [np.random.choice(['HIS', 'THR', 'ILE', 'ASN', 'GLY']) for _ in positions],
-            'Score': base + peaks
-        }
-        st.session_state.df_results = pd.DataFrame(data)
-    st.rerun()
-
-if 'df_results' in st.session_state:
-    # Add the animated arrow pointing to the top-right export tab
-    st.markdown('<div class="download-indicator">⤵️</div>', unsafe_allow_html=True)
+    status_placeholder = st.empty()
     
-    df = st.session_state.df_results.sort_values(by='Pos')
-    df['Top 6 Suggestions'] = df['Res'].apply(get_top_6_suggestions)
-
-    tab1, tab2, tab3 = st.tabs(["📊 Visual Landscape", "📋 Candidate Table", "📥 Export Center"])
-
-    with tab1:
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df['Pos'], y=df['Score'], mode='lines',
-            fill='tozeroy', line=dict(color='#007BFF', width=2),
-            fillcolor='rgba(0, 123, 255, 0.2)'
-        ))
-        fig.update_layout(
-            paper_bgcolor='black', plot_bgcolor='black',
-            font_color='white', xaxis_title="Residue Position",
-            yaxis_title="Hotspot Score", height=500
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    with tab2:
-        st.dataframe(df.style.background_gradient(subset=['Score'], cmap='Blues'), use_container_width=True)
-
-    with tab3:
-        st.subheader("Prepare Documentation")
-        col_a, col_b = st.columns([0.7, 0.3])
+    with status_placeholder.container():
+        st.markdown("<h3 style='text-align: center; color: #007BFF;'>Running Molecular Dynamics...</h3>", unsafe_allow_html=True)
         
-        with col_b:
-            st_lottie(lottie_download, height=150, key="dl_anim")
-            report_file = generate_professional_report(pdb_id_display, df)
-            st.download_button(
-                label="Download Research Report",
-                data=report_file,
-                file_name=f"Report_{pdb_id_display}.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
+        # Check if Lottie loaded before displaying to prevent crash
+        if lottie_analyze:
+            st_lottie(lottie_analyze, height=250, key="main_loader")
+        else:
+            st.info("Computing structural hotspots... please wait.")
+            st.progress(40)
+            
+        time.sleep(3) # Simulation of heavy computation
+
+    status_placeholder.empty() # Clear animation when done
+    
+    # Generate simulation
