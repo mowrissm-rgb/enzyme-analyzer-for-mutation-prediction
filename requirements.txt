@@ -1,6 +1,8 @@
 streamlit
-pandas
 plotly
-python-docx
-biopython
+pandas
 matplotlib
+python-docx
+numpy
+requests
+streamlit-lottie
