@@ -1,8 +1,8 @@
 streamlit
-plotly
+biopython
 pandas
-matplotlib
-python-docx
 numpy
-requests
-streamlit-lottie
+matplotlib
+plotly
+python-docx
+streamlit-molstar
