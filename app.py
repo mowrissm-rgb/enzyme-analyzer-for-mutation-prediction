@@ -72,7 +72,6 @@ if analyze_btn and file_path:
     structure = parser.get_structure(pdb_name, file_path)
     report_data = {"name": pdb_name}
 
-    # --- TABBED RESULTS ---
     tab1, tab2, tab3 = st.tabs(["📊 Analysis", "🔍 Active Site", "🧪 Mutation Strategy"])
 
     # PIPELINE 1: Physicochemical
@@ -95,35 +94,4 @@ if analyze_btn and file_path:
                 
                 report_data['physico'] = {"MW": mw, "pI": pi, "II": ii, "Seq": sequence}
                 st.write("### 3D Visualization")
-                st_molstar(file_path, height=400)
-        else:
-            st.info("Physicochemical Analysis was skipped.")
-
-    # PIPELINE 2: Active Site
-    with tab2:
-        if run_active_site:
-            st.subheader("Catalytic Residue Mapping")
-            res_map = {'HIS': [], 'SER': [], 'ASP': []}
-            for model in structure:
-                for chain in model:
-                    for res in chain:
-                        if res.resname in res_map and res.id[0] == ' ':
-                            res_map[res.resname].append(f"{res.resname}{res.id[1]}({chain.id})")
-            
-            st.json(res_map)
-            report_data['active_site'] = res_map
-        else:
-            st.info("Active Site Mapping was skipped.")
-
-    # PIPELINE 3: Mutation Strategy
-    with tab3:
-        if run_mutation:
-            st.subheader("Computational Hotspot Landscape")
-            # Extracting residues for real position mapping
-            res_list = []
-            for res in structure.get_residues():
-                if res.id[0] == ' ':
-                    res_list.append({"Pos": res.id[1], "Res": res.resname})
-            
-            df_base = pd.DataFrame(res_list)
-            df_base['Score'] = np.
+                st_mol
