@@ -94,7 +94,7 @@ with col_right:
         # SECTION 1: PHYSICO
         if run_1:
             st.subheader("I. Molecular Characterization")
-            st_molstar(file_path, height=500) # 3D First
+            st_molstar(file_path, height=500) 
             
             st.latex(r"pI \approx \sum (Charge_{AminoAcids} = 0)")
             ppb = PPBuilder()
@@ -114,7 +114,7 @@ with col_right:
         # SECTION 2: ACTIVE SITE
         if run_2:
             st.subheader("II. Catalytic Residue Mapping")
-            st_molstar(file_path, height=500) # 3D First
+            st_molstar(file_path, height=500)
             
             active_res = []
             for res in structure.get_residues():
@@ -130,7 +130,7 @@ with col_right:
         # SECTION 3: MUTATION
         if run_3:
             st.subheader("III. B-Factor Flexibility Landscape")
-            st_molstar(file_path, height=500) # 3D First
+            st_molstar(file_path, height=500)
             
             res_data = []
             for atom in structure.get_atoms():
@@ -138,26 +138,26 @@ with col_right:
             df_mut = pd.DataFrame(res_data).groupby(['Pos', 'Res']).mean().reset_index()
             df_mut['Flexibility_Score'] = (df_mut['B'] / df_mut['B'].max()) * 100
             
-            # Professional Publication-Style Graph
+            # Professional Graph
             fig, ax = plt.subplots(figsize=(10, 4))
-            ax.plot(df_mut['Pos'], df_mut['Flexibility_Score'], color='#1E3A8A', linewidth=1.5, label='B-Factor Trace')
+            ax.plot(df_mut['Pos'], df_mut['Flexibility_Score'], color='#1E3A8A', linewidth=1.5)
             ax.fill_between(df_mut['Pos'], df_mut['Flexibility_Score'], alpha=0.15, color='#1E3A8A')
-            
             ax.set_title("Residue-Level Flexibility Profile", fontsize=12, fontweight='bold')
-            ax.set_xlabel("Residue Position", fontsize=10)
-            ax.set_ylabel("Normalized B-Factor (%)", fontsize=10)
-            ax.grid(True, linestyle='--', alpha=0.6)
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
+            ax.set_xlabel("Residue Position")
+            ax.set_ylabel("Normalized B-Factor (%)")
+            ax.grid(True, linestyle='--', alpha=0.5)
             plt.tight_layout()
-            
             st.pyplot(fig)
             
             buf = io.BytesIO()
-            fig.savefig(buf, format='png', dpi=300); buf.seek(0)
+            fig.savefig(buf, format='png', dpi=300)
+            buf.seek(0)
             
-            st.write("**Top 10 High-Flexibility Hotspots (Mutation Candidates):**")
-            st.dataframe(df_mut.nlargest(10, 'Flexibility_Score'), use_container_width=True)
+            top_ten = df_mut.nlargest(10, 'Flexibility_Score')
+            st.dataframe(top_ten, use_container_width=True)
             
             m_methods = "Flexibility mapping derived from normalized isotropic displacement parameters."
-            rep_m = create_prof_report("Mutation Landscape", m_methods, ["Score = (B/Bmax)*100"], df_mut.nlargest(10,
+            rep_m = create_prof_report("Mutation Landscape", m_methods, ["Score = (B/Bmax)*100"], top_ten, buf)
+            st.download_button("📥 Download Mutation Strategy", rep_m, f"{pdb_name}_Mutation.docx", key="dl_3")
+    else:
+        st.info("Please upload a PDB file or enter an ID to begin.")
