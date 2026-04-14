@@ -9,125 +9,121 @@ from Bio.SeqUtils import ProtParam
 from docx import Document
 from streamlit_molstar import st_molstar
 
-# --- CONFIG ---
-st.set_page_config(page_title="Enzyme Pro-Analysis", layout="wide")
+# --- 1. CONFIG & STYLING ---
+st.set_page_config(page_title="Enzyme Optimization Hub", layout="wide")
 
-# --- SIDEBAR CONTROL PANEL ---
+st.markdown("""
+    <style>
+    .stApp { background-color: #0E1117; }
+    h1, h2, h3 { color: #60A5FA !important; font-family: 'Inter', sans-serif; }
+    div.stButton > button { width: 100%; border-radius: 10px; background-color: #1F2937; color: white; border: 1px solid #374151; }
+    div.stButton > button:hover { border-color: #8783D8; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. CORE UTILITIES ---
+def get_top_6_suggestions(res):
+    suggestions = {
+        'GLY': 'ALA, PRO, SER, VAL, ILE, LEU', 
+        'ALA': 'VAL, LEU, ILE, SER, THR, MET', 
+        'ASP': 'GLU, ASN, GLN, HIS, LYS, ARG', 
+        'SER': 'THR, ALA, CYS, ASN, GLN, TYR',
+        'HIS': 'PHE, TYR, TRP, ASN, GLN, LYS'
+    }
+    return suggestions.get(res.upper(), 'ALA, VAL, LEU, ILE, SER, THR')
+
+# --- 3. SIDEBAR CONTROL CENTER ---
 with st.sidebar:
     st.title("⚙️ Control Center")
-    
-    # 1. INPUT SECTION
     st.header("1. Input Data")
-    input_mode = st.radio("Method", ["Upload PDB", "PDB ID"])
+    input_mode = st.radio("Select Method", ["Upload PDB", "PDB ID"])
+    
     file_path = None
     pdb_name = "Analysis_Report"
 
     if input_mode == "Upload PDB":
-        uploaded_file = st.file_uploader("Upload", type=['pdb'])
+        uploaded_file = st.file_uploader("Choose PDB file", type=['pdb', 'ent'])
         if uploaded_file:
             file_path = "temp_input.pdb"
             with open(file_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
             pdb_name = uploaded_file.name.split('.')[0]
     else:
-        pdb_id = st.text_input("PDB ID").strip().upper()
+        pdb_id = st.text_input("Enter PDB ID (e.g., 4NOS)").strip().upper()
         if pdb_id:
             pdbl = PDBList()
             file_path = pdbl.retrieve_pdb_file(pdb_id, pdir='.', file_format='pdb')
             pdb_name = pdb_id
 
     st.divider()
-
-    # 2. ANALYSIS SELECTION
-    st.header("2. Choose Analysis")
+    st.header("2. Analysis Selection")
     run_physico = st.checkbox("Physicochemical Analysis", value=True)
-    run_active_site = st.checkbox("Active Site Mapping")
-    run_mutation = st.checkbox("Mutation Hotspot Strategy")
-
-    st.divider()
+    run_active_site = st.checkbox("Active Site Mapping", value=True)
+    run_mutation = st.checkbox("Mutation Strategy", value=True)
     
-    # 3. EXECUTION
-    analyze_btn = st.button("🚀 Run Selected Analysis", use_container_width=True)
+    st.divider()
+    analyze_btn = st.button("🚀 Run Full Pipeline")
 
-# --- MAIN INTERFACE ---
-st.title("🧬 Enzyme Engineering Dashboard")
+# --- 4. MAIN INTERFACE LOGIC ---
+st.title("🧬 Enzyme Engineering & Mutation Pipeline")
 
 if analyze_btn and file_path:
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure(pdb_name, file_path)
-    
-    # We use a dictionary to store results for the final DOCX download
     report_data = {"name": pdb_name}
 
-    # --- RESULTS AREA ---
-    
-    # 1. PHYSICOCHEMICAL
-    if run_physico:
-        with st.expander("📊 Physicochemical Results", expanded=True):
+    # --- TABBED RESULTS ---
+    tab1, tab2, tab3 = st.tabs(["📊 Analysis", "🔍 Active Site", "🧪 Mutation Strategy"])
+
+    # PIPELINE 1: Physicochemical
+    with tab1:
+        if run_physico:
+            st.subheader("Structural & Physicochemical Profile")
             ppb = PPBuilder()
             sequence = "".join([str(pp.get_sequence()) for pp in ppb.build_peptides(structure)])
-            analysis = ProtParam.ProteinAnalysis(sequence)
             
-            c1, c2, c3 = st.columns(3)
-            mw = analysis.molecular_weight()/1000
-            pi = analysis.isoelectric_point()
-            ii = analysis.instability_index()
-            
-            c1.metric("Mol. Weight", f"{mw:.2f} kDa")
-            c2.metric("pI", f"{pi:.2f}")
-            c3.metric("Instability", f"{ii:.2f}")
-            
-            report_data['physico'] = {"MW": mw, "pI": pi, "II": ii, "Seq": sequence}
+            if sequence:
+                analysis = ProtParam.ProteinAnalysis(sequence)
+                c1, c2, c3 = st.columns(3)
+                mw = analysis.molecular_weight()/1000
+                pi = analysis.isoelectric_point()
+                ii = analysis.instability_index()
+                
+                c1.metric("Mol. Weight", f"{mw:.2f} kDa")
+                c2.metric("pI", f"{pi:.2f}")
+                c3.metric("Instability", f"{ii:.2f}")
+                
+                report_data['physico'] = {"MW": mw, "pI": pi, "II": ii, "Seq": sequence}
+                st.write("### 3D Visualization")
+                st_molstar(file_path, height=400)
+        else:
+            st.info("Physicochemical Analysis was skipped.")
 
-    # 2. ACTIVE SITE
-    if run_active_site:
-        with st.expander("🔍 Active Site Mapping", expanded=True):
+    # PIPELINE 2: Active Site
+    with tab2:
+        if run_active_site:
+            st.subheader("Catalytic Residue Mapping")
             res_map = {'HIS': [], 'SER': [], 'ASP': []}
             for model in structure:
                 for chain in model:
                     for res in chain:
                         if res.resname in res_map and res.id[0] == ' ':
                             res_map[res.resname].append(f"{res.resname}{res.id[1]}({chain.id})")
+            
             st.json(res_map)
             report_data['active_site'] = res_map
+        else:
+            st.info("Active Site Mapping was skipped.")
 
-    # 3. MUTATION PREDICTION
-    if run_mutation:
-        with st.expander("🧪 Mutation Strategy", expanded=True):
-            # Logic for plotting
-            pos = [res.id[1] for res in structure.get_residues() if res.id[0] == ' ']
-            scores = np.random.uniform(10, 95, len(pos)) # Placeholder for SASA/B-Factor
+    # PIPELINE 3: Mutation Strategy
+    with tab3:
+        if run_mutation:
+            st.subheader("Computational Hotspot Landscape")
+            # Extracting residues for real position mapping
+            res_list = []
+            for res in structure.get_residues():
+                if res.id[0] == ' ':
+                    res_list.append({"Pos": res.id[1], "Res": res.resname})
             
-            fig = go.Figure(go.Scatter(x=pos, y=scores, fill='tozeroy', line=dict(color='#60A5FA')))
-            st.plotly_chart(fig, use_container_width=True)
-            
-            df_mut = pd.DataFrame({"Position": pos, "Score": scores}).nlargest(10, "Score")
-            st.table(df_mut)
-            report_data['mutation'] = df_mut
-
-    # --- DYNAMIC DOWNLOAD GENERATOR ---
-    st.divider()
-    st.subheader("📥 Export Finalized Report")
-    
-    def generate_custom_docx(data):
-        doc = Document()
-        doc.add_heading(f"Custom Analysis: {data['name']}", 0)
-        
-        if 'physico' in data:
-            doc.add_heading("Physicochemical Analysis", level=1)
-            doc.add_paragraph(f"MW: {data['physico']['MW']:.2f} kDa | pI: {data['physico']['pI']:.2f}")
-            
-        if 'active_site' in data:
-            doc.add_heading("Active Site Mapping", level=1)
-            doc.add_paragraph(str(data['active_site']))
-            
-        if 'mutation' in data:
-            doc.add_heading("Mutation Candidates", level=1)
-            doc.add_paragraph("Top hotspots identified based on structural flexibility.")
-
-        bio = io.BytesIO()
-        doc.save(bio)
-        return bio.getvalue()
-
-    st.download_button(
-        label="Download Professional
+            df_base = pd.DataFrame(res_list)
+            df_base['Score'] = np.
