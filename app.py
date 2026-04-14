@@ -127,83 +127,37 @@ with col_right:
             rep_a = create_prof_report("Active Site Mapping", "Structural residue identification via Biopython.", None, a_df)
             st.download_button("📥 Download Mapping Report", rep_a, f"{pdb_name}_ActiveSite.docx", key="dl_2")
 
-       # --- SECTION 3: MUTATION (Including New Graph Style) ---
-if run_3 and file_path:
-    st.subheader("III. Structural Hotspot Landscape")
-    st_molstar(file_path, height=500) # Keep 3D at top
-
-    # --- 1. Scientific Data Generation (Biophysical B-Factors) ---
-    res_data = []
-    for atom in structure.get_atoms():
-        # Capturing atomic displacement parameters (B-factors)
-        res_data.append({
-            "Pos": atom.get_parent().id[1],
-            "B": atom.get_bfactor(),
-            "Res": atom.get_parent().resname
-        })
-    # Aggregate atom data to residue level
-    df_mut = pd.DataFrame(res_data).groupby(['Pos', 'Res']).mean().reset_index()
-    # Normalize B-factors into a 0-100 flexibility score
-    df_mut['Flexibility_Score'] = (df_mut['B'] / df_mut['B'].max()) * 100
-    
-    # --- 2. Professional Graph Styling (Purple & Light Blue Fill) ---
-    # Define color scheme
-    purple_line = '#8F8FDB'  # The muted purple from your example
-    sky_blue_fill = '#CCEEFF' # The light blue filled area
-
-    fig, ax = plt.subplots(figsize=(10, 4))
-
-    # Add the fill area FIRST (it sits behind the line)
-    ax.fill_between(
-        df_mut['Pos'], 
-        df_mut['Flexibility_Score'], 
-        color=sky_blue_fill, 
-        alpha=0.7 # High opacity for solid fill like example
-    )
-
-    # Add the purple line
-    ax.plot(
-        df_mut['Pos'], 
-        df_mut['Flexibility_Score'], 
-        color=purple_line, 
-        linewidth=1.8,
-        label='B-Factor Profile'
-    )
-
-    # Publication-Ready Aesthetics
-    ax.set_title(f"Structural Hotspot Profile: {pdb_name.upper()}", fontsize=14, fontweight='bold')
-    ax.set_xlabel("Residue Position", fontsize=11)
-    ax.set_ylabel("Hotspot Score (B-Factor %)", fontsize=11)
-    ax.grid(True, linestyle='--', alpha=0.5, color='#e0e0e0') # Subtle grid
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    plt.tight_layout()
-    
-    # Display in Streamlit
-    st.pyplot(fig)
-    
-    # --- 3. Save Plot to Buffer for the professional docx Report ---
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=300)
-    buf.seek(0)
-    
-    # --- 4. Technical Data Table ---
-    st.write("**Top 10 Mutation Candidates (High-Flexibility Areas):**")
-    top_ten = df_mut.nlargest(10, 'Flexibility_Score')
-    st.dataframe(top_ten.style.format({'Flexibility_Score': '{:.2f}'}), use_container_width=True)
-    
-    # --- 5. Generate Professional Report Block ---
-    m_methods = "Mutational hotspots were identified via normalized isotropic displacement parameters (B-factors)."
-    rep_m = create_prof_report(
-        "Mutation Landscape & Hotspot Strategy", 
-        m_methods, 
-        ["Flexibility Score = (B_residue / B_max_structure) * 100"], 
-        top_ten, 
-        buf
-    )
-    st.download_button(
-        "📥 Download Professional Mutation Strategy", 
-        rep_m, 
-        f"{pdb_name}_Mutation.docx", 
-        key="dl_3"
-    )
+        # SECTION 3: MUTATION
+        if run_3:
+            st.subheader("III. B-Factor Flexibility Landscape")
+            st_molstar(file_path, height=500)
+            
+            res_data = []
+            for atom in structure.get_atoms():
+                res_data.append({"Pos": atom.get_parent().id[1], "B": atom.get_bfactor(), "Res": atom.get_parent().resname})
+            df_mut = pd.DataFrame(res_data).groupby(['Pos', 'Res']).mean().reset_index()
+            df_mut['Flexibility_Score'] = (df_mut['B'] / df_mut['B'].max()) * 100
+            
+            # Professional Graph
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(df_mut['Pos'], df_mut['Flexibility_Score'], color='#1E3A8A', linewidth=1.5)
+            ax.fill_between(df_mut['Pos'], df_mut['Flexibility_Score'], alpha=0.15, color='#1E3A8A')
+            ax.set_title("Residue-Level Flexibility Profile", fontsize=12, fontweight='bold')
+            ax.set_xlabel("Residue Position")
+            ax.set_ylabel("Normalized B-Factor (%)")
+            ax.grid(True, linestyle='--', alpha=0.5)
+            plt.tight_layout()
+            st.pyplot(fig)
+            
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', dpi=300)
+            buf.seek(0)
+            
+            top_ten = df_mut.nlargest(10, 'Flexibility_Score')
+            st.dataframe(top_ten, use_container_width=True)
+            
+            m_methods = "Flexibility mapping derived from normalized isotropic displacement parameters."
+            rep_m = create_prof_report("Mutation Landscape", m_methods, ["Score = (B/Bmax)*100"], top_ten, buf)
+            st.download_button("📥 Download Mutation Strategy", rep_m, f"{pdb_name}_Mutation.docx", key="dl_3")
+    else:
+        st.info("Please upload a PDB file or enter an ID to begin.")
