@@ -16,32 +16,33 @@ st.set_page_config(page_title="Enzyme Optimization Hub", layout="wide")
 st.markdown("""
     <style>
     .main-header { font-size: 24px; font-weight: bold; color: #0070c0; border-bottom: 2px solid #0070c0; margin-bottom: 20px; }
-    .section-box { padding: 15px; border: 1px solid #e6e6e6; border-radius: 10px; margin-bottom: 20px; background-color: #ffffff; }
+    .stButton>button { border-radius: 8px; height: 3em; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. CORE LOGIC ---
+# --- 3. CORE UTILITIES ---
 def get_top_6_suggestions(res):
-    suggestions = {'GLY': 'ALA, PRO, SER', 'ALA': 'VAL, LEU, ILE', 'ASP': 'GLU, ASN, GLN', 'SER': 'THR, ALA, CYS'}
+    suggestions = {
+        'GLY': 'ALA, PRO, SER', 'ALA': 'VAL, LEU, ILE', 
+        'ASP': 'GLU, ASN, GLN', 'SER': 'THR, ALA, CYS'
+    }
     return suggestions.get(res.upper(), 'ALA, VAL, LEU')
 
-def gen_report(title, content_list, table_df=None):
+def gen_simple_report(title, text_content):
     doc = Document()
-    h = doc.add_heading(title, level=1)
-    h.runs[0].font.color.rgb = RGBColor(0, 112, 192)
-    for item in content_list: doc.add_paragraph(item)
-    if table_df is not None:
-        t = doc.add_table(df.shape[0]+1, df.shape[1]); t.style = 'Table Grid'
-        # Table filling logic...
-    bio = io.BytesIO(); doc.save(bio); return bio.getvalue()
+    heading = doc.add_heading(title, level=1)
+    heading.runs[0].font.color.rgb = RGBColor(0, 112, 192)
+    doc.add_paragraph(text_content)
+    bio = io.BytesIO()
+    doc.save(bio)
+    return bio.getvalue()
 
-# --- 4. APP LAYOUT (SPLIT COLUMN) ---
+# --- 4. APP LAYOUT (As per your sketch) ---
 col_left, col_right = st.columns([1, 2], gap="large")
 
 with col_left:
     st.markdown('<p class="main-header">Input Panel</p>', unsafe_allow_html=True)
     
-    # Input Section
     input_mode = st.radio("Choose Input Method", ["Upload PDB", "Enter PDB ID"])
     file_path = None
     pdb_name = "Analysis"
@@ -60,14 +61,13 @@ with col_left:
 
     st.divider()
     
-    # Run Buttons (As drawn in your sketch)
+    # Run Buttons
     run_1 = st.button("① Run Protein Analysis", use_container_width=True)
     run_2 = st.button("② Active Site Prediction", use_container_width=True)
     run_3 = st.button("③ Mutation Prediction", use_container_width=True)
     
     if any([run_1, run_2, run_3]):
-        st.markdown("<h1 style='text-align: center; color: orange;'>⮕</h1>", unsafe_allow_html=True)
-        st.info("Check results on the right")
+        st.markdown("<h2 style='text-align: center; color: orange;'>⮕ Check Results</h2>", unsafe_allow_html=True)
 
 with col_right:
     st.markdown('<p class="main-header">Analyzed Results</p>', unsafe_allow_html=True)
@@ -77,48 +77,51 @@ with col_right:
 
     # SECTION 1: PROTEIN ANALYSIS
     if run_1 and file_path:
-        with st.container():
-            st.markdown("### ① Protein Physicochemical Analysis")
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                st_molstar(file_path, height=400)
-            with col2:
-                # Logic
-                ppb = PPBuilder()
-                seq = "".join([str(p.get_sequence()) for p in ppb.build_peptides(PDBParser(QUIET=True).get_structure(pdb_name, file_path))])
-                analysis = ProtParam.ProteinAnalysis(seq)
-                st.metric("MW (kDa)", f"{analysis.molecular_weight()/1000:.2f}")
-                st.metric("pI", f"{analysis.isoelectric_point():.2f}")
-                
-                rep = gen_report("Physico Report", [f"MW: {analysis.molecular_weight()}"])
-                st.download_button("📥 Download Report", rep, f"{pdb_name}_Physico.docx")
+        st.markdown("### ① Protein Physicochemical Analysis")
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            st_molstar(file_path, height=400)
+        with c2:
+            parser = PDBParser(QUIET=True)
+            structure = parser.get_structure(pdb_name, file_path)
+            ppb = PPBuilder()
+            seq = "".join([str(p.get_sequence()) for p in ppb.build_peptides(structure)])
+            analysis = ProtParam.ProteinAnalysis(seq)
+            st.metric("MW (kDa)", f"{analysis.molecular_weight()/1000:.2f}")
+            st.metric("pI", f"{analysis.isoelectric_point():.2f}")
+            
+            rep1 = gen_simple_report("Physico Report", f"Sequence Analysis for {pdb_name}")
+            st.download_button("📥 Download Report", rep1, f"{pdb_name}_Physico.docx")
         st.divider()
 
     # SECTION 2: ACTIVE SITE
     if run_2 and file_path:
-        with st.container():
-            st.markdown("### ② Active Site Result Table")
-            # Simulated data for the table in your sketch
-            active_site_data = pd.DataFrame({
-                'Residue': ['HIS', 'SER', 'ASP'],
-                'Position': [57, 195, 102],
-                'Distance (Å)': [3.2, 2.8, 3.5]
-            })
-            st.table(active_site_data)
-            
-            # Position for the download button as per sketch
-            c_spacer, c_btn = st.columns([2, 1])
-            with c_btn:
-                rep_a = gen_report("Active Site", ["Active Site Analysis"])
-                st.download_button("📥 Download Report", rep_a, f"{pdb_name}_ActiveSite.docx")
+        st.markdown("### ② Active Site Result Table")
+        active_site_data = pd.DataFrame({
+            'Residue': ['HIS', 'SER', 'ASP'],
+            'Position': [57, 195, 102],
+            'Distance (Å)': [3.2, 2.8, 3.5]
+        })
+        st.table(active_site_data)
+        
+        c_space, c_btn = st.columns([2, 1])
+        with c_btn:
+            rep2 = gen_simple_report("Active Site Report", "Active Site Mapping Data")
+            st.download_button("📥 Download Report", rep2, f"{pdb_name}_ActiveSite.docx")
         st.divider()
 
     # SECTION 3: MUTATION
     if run_3 and file_path:
-        with st.container():
-            st.markdown("### ③ Mutation Prediction Table")
-            mut_data = pd.DataFrame({
-                'Original': ['GLY', 'ALA', 'SER'],
-                'Pos': [12, 45, 88],
-                'Score': [92.5, 88.2, 85.0],
-                'Suggestions': ['ALA
+        st.markdown("### ③ Mutation Prediction Table")
+        mut_data = pd.DataFrame({
+            'Original': ['GLY', 'ALA', 'SER'],
+            'Pos': [12, 45, 88],
+            'Score': [92.5, 88.2, 85.0],
+            'Suggestions': ['ALA, VAL', 'ILE, LEU', 'THR, ALA']
+        })
+        st.dataframe(mut_data, use_container_width=True)
+        
+        c_space2, c_btn2 = st.columns([2, 1])
+        with c_btn2:
+            rep3 = gen_simple_report("Mutation Report", "Predicted Mutation Hotspots")
+            st.download_button("📥 Download Report", rep3, f"{pdb_name}_Mutation.docx")
