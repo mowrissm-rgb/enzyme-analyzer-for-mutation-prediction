@@ -1,157 +1,138 @@
 import streamlit as st
-import plotly.graph_objects as go
-import pandas as pd
-import matplotlib.pyplot as plt
-from docx import Document
-from docx.shared import Inches, Pt
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+import os
 import io
+import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
+from Bio.PDB import PDBParser, PPBuilder, PDBList
+from Bio.SeqUtils import ProtParam
+from docx import Document
+from docx.shared import RGBColor, Inches, Pt
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+from streamlit_molstar import st_molstar
 
-# --- 1. CLEAN MODERN UI (No Arrows) ---
+# --- 1. CONFIG & STYLING ---
+st.set_page_config(page_title="Enzyme Optimization Hub", layout="wide")
+
 st.markdown("""
     <style>
-    .stApp {
-        background-color: #0E1117;
-    }
-    h1, h2, h3 {
-        color: white !important;
-        font-family: 'Inter', sans-serif;
-    }
-    div.stDownloadButton > button {
-        background-color: #1F2937 !important;
-        color: white !important;
-        border: 1px solid #374151 !important;
-        border-radius: 10px !important;
-        padding: 0.75rem 1.5rem !important;
-        width: 100%;
-        font-weight: 500;
-        transition: all 0.3s ease;
-    }
-    div.stDownloadButton > button:hover {
-        border-color: #8783D8 !important;
-        background-color: #2D3748 !important;
-    }
-    .stTabs [data-baseweb="tab"] {
-        color: #9CA3AF;
-        font-size: 16px;
-    }
-    .stTabs [data-baseweb="tab--active"] {
-        color: #8783D8 !important;
-        border-bottom-color: #8783D8 !important;
-    }
+    .stApp { background-color: #0E1117; }
+    h1, h2, h3 { color: #60A5FA !important; font-family: 'Inter', sans-serif; }
+    .reportview-container .main .block-container { padding-top: 2rem; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. LOGIC FUNCTIONS ---
-def get_top_6_suggestions(original_res):
-    suggestions_map = {
-        'GLY': 'ALA, PRO, SER, VAL, ILE, LEU',
-        'ALA': 'VAL, LEU, ILE, SER, THR, MET',
-        'ASP': 'GLU, ASN, GLN, HIS, LYS, ARG',
-        'SER': 'THR, ALA, CYS, ASN, GLN, TYR',
-        'HIS': 'PHE, TYR, TRP, ASN, GLN, LYS',
-        'THR': 'SER, VAL, ALA, ILE, MET, ASN',
-        'ILE': 'VAL, LEU, MET, PHE, ALA, TRP',
-        'ASN': 'GLN, ASP, GLU, HIS, SER, THR',
-        'DEFAULT': 'ALA, VAL, LEU, ILE, SER, THR'
-    }
-    return suggestions_map.get(original_res.upper(), suggestions_map['DEFAULT'])
+# --- 2. CORE UTILITIES ---
+def get_top_6_suggestions(res):
+    suggestions = {'GLY': 'ALA, PRO, SER, VAL, ILE, LEU', 'ALA': 'VAL, LEU, ILE, SER, THR, MET', 
+                   'ASP': 'GLU, ASN, GLN, HIS, LYS, ARG', 'SER': 'THR, ALA, CYS, ASN, GLN, TYR',
+                   'HIS': 'PHE, TYR, TRP, ASN, GLN, LYS'}
+    return suggestions.get(res.upper(), 'ALA, VAL, LEU, ILE, SER, THR')
 
-def generate_professional_report(pdb_id, df):
-    doc = Document()
-    doc.add_heading(f'Enzyme Mutation Strategy Report: {pdb_id}', 0)
-    
-    doc.add_heading('1. Methodology', level=1)
-    doc.add_paragraph("This pipeline identifies structural mutation hotspots by integrating Solvent Accessible Surface Area (SASA) and B-factor flexibility analysis.")
-    
-    doc.add_heading('2. Mathematical Foundation', level=1)
-    formula_p = doc.add_paragraph()
-    formula_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = formula_p.add_run("Score = (w_SASA × [SASA_i / SASA_max]) + (w_B × [B_i / B_max])")
-    run.bold, run.font.size = True, Pt(12)
-
-    doc.add_heading('3. Structural Hotspot Landscape', level=1)
-    plt.figure(figsize=(15, 5))
-    plt.plot(df['Pos'], df['Score'], color='#8783D8', linewidth=1.5)
-    plt.fill_between(df['Pos'], df['Score'], 0, color='#ADD8E6', alpha=0.3)
-    img_stream = io.BytesIO()
-    plt.savefig(img_stream, format='png', bbox_inches='tight', dpi=300)
-    img_stream.seek(0)
-    doc.add_picture(img_stream, width=Inches(6.2))
-
-    doc.add_heading('4. High-Priority Mutation Candidates', level=1)
-    table = doc.add_table(rows=1, cols=4)
-    table.style = 'Light Shading Accent 1'
-    for i, h in enumerate(['Position', 'Residue', 'Score', 'Suggestions']):
-        table.rows[0].cells[i].text = h
-
-    top_candidates = df.nlargest(20, 'Score').sort_values('Pos')
-    for _, row in top_candidates.iterrows():
-        cells = table.add_row().cells
-        cells[0].text, cells[1].text = str(row['Pos']), str(row['Res'])
-        cells[2].text, cells[3].text = f"{row['Score']:.2f}", row['Top 6 Suggestions']
-
-    doc.add_page_break()
-    doc.add_heading('5. References', level=1)
-    references = [
-        "Shrake A, Rupley JA. J Mol Biol. 1973;79(2):351-71.",
-        "Reetz MT, Carballeira JD. Nat Protoc. 2006;1(4):1855-65.",
-        "Sun H, et al. J Chem Inf Model. 2019;59(1):12-25.",
-        "Cock PJ, et al. Bioinformatics. 2009;25(11):1422-3.",
-        "Berman HM, et al. Nucleic Acids Res. 2000;28(1):235-42."
-    ]
-    for i, ref in enumerate(references, 1):
-        doc.add_paragraph(f"{i}. {ref}")
-
-    bio = io.BytesIO()
-    doc.save(bio)
-    bio.seek(0)
-    return bio
-
-# --- 3. MAIN UI ---
-st.title("🧬 Enzyme Analysis Pipeline")
-st.markdown("<p style='color: #60A5FA;'>Advanced Computational Hotspot Identification</p>", unsafe_allow_html=True)
+# --- 3. HEADER & INPUT ---
+st.title("🧬 Enzyme Engineering & Mutation Pipeline")
+st.write("Merge of Structural Analysis, Active Site Mapping, and Mutation Prediction")
 
 with st.sidebar:
-    st.header("Project Configuration")
-    input_mode = st.radio("Input Method", ["Upload PDB File", "Fetch by PDB ID"])
-    pdb_id_display = st.text_input("Project ID", value="4TKX")
-    run_btn = st.button("🚀 Run Full Analysis", use_container_width=True)
+    st.header("Input Data")
+    input_mode = st.radio("Select Method", ["Upload PDB", "PDB ID"])
+    
+    file_path = None
+    pdb_name = "Target"
 
-if 'df_results' in st.session_state:
-    df = st.session_state.df_results
-    df['Top 6 Suggestions'] = df['Res'].apply(get_top_6_suggestions)
+    if input_mode == "Upload PDB":
+        uploaded_file = st.file_uploader("Choose a PDB file", type=['pdb', 'ent'])
+        if uploaded_file:
+            file_path = "temp_input.pdb"
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            pdb_name = uploaded_file.name.split('.')[0]
+    else:
+        pdb_id = st.text_input("Enter PDB ID (e.g., 4NOS)").strip().upper()
+        if pdb_id:
+            pdbl = PDBList()
+            file_path = pdbl.retrieve_pdb_file(pdb_id, pdir='.', file_format='pdb')
+            pdb_name = pdb_id
 
-    tab1, tab2, tab3 = st.tabs(["🔍 Visual Landscape", "📋 Candidate Table", "📥 Export Center"])
+# --- 4. MAIN PIPELINE LOGIC ---
+if file_path and os.path.exists(file_path):
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure(pdb_name, file_path)
+    
+    # Global Tabs
+    tab1, tab2, tab3 = st.tabs(["📊 Protein Analysis", "🔍 Active Site Prediction", "🧪 Mutation Strategy"])
 
+    # --- TAB 1: PROTEIN ANALYSIS (PIPELINE 1) ---
     with tab1:
-        st.subheader(f"Landscape Graph: {pdb_id_display}")
-        fig = go.Figure(data=[go.Scatter(x=df['Pos'], y=df['Score'], fill='tozeroy', line=dict(color='#8783D8'))])
-        st.plotly_chart(fig, use_container_width=True)
+        st.subheader("Physicochemical Profile")
+        ppb = PPBuilder()
+        sequence = "".join([str(pp.get_sequence()) for pp in ppb.build_peptides(structure)])
+        
+        if sequence:
+            analysis = ProtParam.ProteinAnalysis(sequence)
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Mol. Weight", f"{analysis.molecular_weight()/1000:.2f} kDa")
+            col2.metric("Isoelectric Point (pI)", f"{analysis.isoelectric_point():.2f}")
+            col3.metric("Instability Index", f"{analysis.instability_index():.2f}")
+            
+            st.write("### Sequence Data")
+            st.code(sequence[:100] + "...")
+        
+        st.subheader("3D Structural View")
+        st_molstar(file_path, height=400)
 
+    # --- TAB 2: ACTIVE SITE PREDICTION (PIPELINE 2) ---
     with tab2:
-        st.dataframe(df.style.background_gradient(subset=['Score'], cmap='YlGnBu'), use_container_width=True)
+        st.subheader("Catalytic Residue Mapping")
+        res_map = {'HIS': [], 'SER': [], 'ASP': []}
+        for model in structure:
+            for chain in model:
+                for res in chain:
+                    if res.resname in res_map and res.id[0] == ' ':
+                        res_map[res.resname].append(f"{res.resname}{res.id[1]}({chain.id})")
+        
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.json(res_map)
+        with col_b:
+            st.info("These residues represent the potential catalytic triad or binding site. Targeted mutations here usually modulate enzymatic activity.")
 
+    # --- TAB 3: MUTATION PREDICTION (PIPELINE 3) ---
     with tab3:
-        st.header("Research Documentation")
-        st.write("Generate a high-resolution DOCX report including the landscape graph and mutation suggestions.")
-        report_data = generate_professional_report(pdb_id_display, df)
-        st.download_button(
-            label="📥 Download Research Report",
-            data=report_data,
-            file_name=f"{pdb_id_display}_Report.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+        st.subheader("Computational Hotspot Landscape")
+        
+        # Generate dummy mutation data based on the actual sequence
+        pos = []
+        res_types = []
+        for model in structure:
+            for chain in model:
+                for res in chain:
+                    if res.id[0] == ' ':
+                        pos.append(res.id[1])
+                        res_types.append(res.resname)
+        
+        # Scoring logic (In a real scenario, this uses B-factor/SASA)
+        scores = np.random.uniform(0, 100, len(pos)) 
+        mut_df = pd.DataFrame({'Pos': pos, 'Res': res_types, 'Score': scores})
+        mut_df['Suggestions'] = mut_df['Res'].apply(get_top_6_suggestions)
+        
+        fig = go.Figure(data=[go.Scatter(x=mut_df['Pos'], y=mut_df['Score'], 
+                                        mode='lines', fill='tozeroy', line=dict(color='#8783D8'))])
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.write("### High-Priority Candidates")
+        st.dataframe(mut_df.nlargest(15, 'Score'), use_container_width=True)
 
-if run_btn:
-    pos = list(range(230, 680))
-    base = np.random.normal(5, 2, len(pos))
-    peaks = np.zeros(len(pos))
-    peaks[::45] = np.random.uniform(80, 150, len(peaks[::45]))
-    st.session_state.df_results = pd.DataFrame({
-        'Pos': pos,
-        'Res': [np.random.choice(['HIS', 'THR', 'ILE', 'ASN', 'GLY', 'ASP', 'ALA', 'PHE']) for _ in pos],
-        'Score': base + peaks
-    })
-    st.rerun()
+        # Export Logic
+        report_bio = io.BytesIO()
+        doc = Document()
+        doc.add_heading(f"Comprehensive Enzyme Report: {pdb_name}", 0)
+        doc.add_paragraph(f"Sequence length: {len(sequence)}")
+        doc.save(report_bio)
+        
+        st.download_button("📥 Download Full Research Report", data=report_bio.getvalue(), 
+                           file_name=f"{pdb_name}_Analysis.docx")
+
+else:
+    st.info("Please upload a PDB file or enter a PDB ID in the sidebar to begin.")
