@@ -111,73 +111,70 @@ with col_right:
             rep = create_prof_report("Physico-Chemical Report", methods, ["MW Calculation", "pI Calculation"], p_df)
             st.download_button("📥 Download Technical Report", rep, f"{pdb_name}_Physico.docx", key="dl_1")
 
-        # SECTION 2: ACTIVE SITE (Enhanced Proximity & Motif Mapping)
+        # --- SECTION 2: UPDATED ACTIVE SITE MAPPING ---
         if run_2:
             st.subheader("II. Catalytic Residue Mapping")
             st_molstar(file_path, height=500)
             
-            # Identify ligands: Any residue that isn't an amino acid or water
-            # 'H_' is the prefix for heteroatoms in Biopython
-            ligands = [res for res in structure.get_residues() 
-                       if res.id[0].startswith('H_') and res.resname not in ['HOH', 'WAT']]
-            
+            # 1. Initialize lists and NeighborSearch
+            from Bio.PDB import NeighborSearch, Selection
             active_res_list = []
             
-            if ligands:
-                st.success(f"Detected {len(ligands)} ligand/hetero-molecule(s): {', '.join(set([l.resname for l in ligands]))}")
+            # Extract all atoms and identify potential ligands (Heteroatoms that aren't water)
+            all_atoms = list(structure.get_atoms())
+            ligand_atoms = [atom for atom in all_atoms if atom.get_parent().id[0].startswith('H_') 
+                            and atom.get_parent().resname not in ['HOH', 'WAT']]
+
+            if ligand_atoms:
+                st.success(f"Detected Ligand: {ligand_atoms[0].get_parent().resname}. Mapping Proximity...")
                 
-                # Proximity search: Find residues within 5.0 Angstroms of the ligand
-                for model in structure:
-                    for chain in model:
-                        for res in chain:
-                            if res.id[0] == ' ': # Standard amino acid
-                                is_proximal = False
-                                for ligand in ligands:
-                                    for atom_l in ligand:
-                                        for atom_r in res:
-                                            # Calculation of Euclidean distance between atoms
-                                            if (atom_l - atom_r) < 5.0:
-                                                is_proximal = True
-                                                break
-                                        if is_proximal: break
-                                    if is_proximal: break
-                                
-                                if is_proximal:
-                                    # Calculate a dummy 'Importance' score based on number of contacts
-                                    active_res_list.append({
-                                        'Residue': res.resname,
-                                        'Position': res.id[1],
-                                        'Chain': chain.id,
-                                        'Interaction': "Ligand Binding"
-                                    })
-            
-            # If no ligand found, or to supplement, search for the Catalytic Triad
-            if not active_res_list:
-                st.warning("No ligand found. Mapping via common catalytic residues (HIS, SER, ASP, CYS).")
+                # Use NeighborSearch for high-performance spatial lookups
+                ns = NeighborSearch(all_atoms)
+                
+                # Find all residues within 5.0 Angstroms of any ligand atom
+                nearby_residues = set()
+                for l_atom in ligand_atoms:
+                    for nearby_atom in ns.search(l_atom.coord, 5.0):
+                        parent_res = nearby_atom.get_parent()
+                        if parent_res.id[0] == ' ': # Ensure it's a standard amino acid
+                            nearby_residues.add(parent_res)
+                
+                for res in nearby_residues:
+                    active_res_list.append({
+                        'Residue': res.resname,
+                        'Position': res.id[1],
+                        'Chain': res.get_parent().id,
+                        'Type': 'Binding Pocket'
+                    })
+            else:
+                st.warning("No ligand detected. Searching for conserved Catalytic Triad (HIS-SER-ASP/CYS).")
                 for res in structure.get_residues():
                     if res.resname in ['HIS', 'SER', 'ASP', 'CYS'] and res.id[0] == ' ':
                         active_res_list.append({
                             'Residue': res.resname,
                             'Position': res.id[1],
-                            'Chain': 'A', # Defaulting
-                            'Interaction': "Conserved Motif"
+                            'Chain': res.get_parent().id,
+                            'Type': 'Conserved Motif'
                         })
 
+            # 2. Display Results
             if active_res_list:
-                a_df = pd.DataFrame(active_res_list).drop_duplicates(subset=['Position', 'Chain'])
+                a_df = pd.DataFrame(active_res_list).sort_values(by='Position')
+                st.write("### Predicted Active Site Residues")
                 st.dataframe(a_df, use_container_width=True)
                 
-                # Provide technical context for the report
+                # Calculation for report: Euclidean distance formula
+                math_basis = [r"d(p, q) = \sqrt{(q_1-p_1)^2 + (q_2-p_2)^2 + (q_3-p_3)^2} \le 5.0\text{\AA}"]
+                
                 rep_a = create_prof_report(
-                    "Active Site Mapping", 
-                    "Mapping performed via spatial proximity (<5.0Å) to detected hetero-ligands.", 
-                    ["Distance (d) = \sqrt{(x_2-x_1)^2 + (y_2-y_1)^2 + (z_2-z_1)^2}"], 
+                    "Active Site Mapping Report", 
+                    "Residues identified using a 5.0 Angstrom spatial proximity threshold to non-water heteroatoms.", 
+                    math_basis, 
                     a_df
                 )
                 st.download_button("📥 Download Mapping Report", rep_a, f"{pdb_name}_ActiveSite.docx", key="dl_2")
             else:
-                st.error("Structure analysis complete: No catalytic residues or ligands identified.")
-       # --- SECTION 3: MUTATION (Including New Graph Style) ---
+                st.error("Could not resolve active site. Please check if the PDB contains a valid structure.")       # --- SECTION 3: MUTATION (Including New Graph Style) ---
 if run_3 and file_path:
     st.subheader("III. Structural Hotspot Landscape")
     st_molstar(file_path, height=500) # Keep 3D at top
