@@ -111,70 +111,48 @@ with col_right:
             rep = create_prof_report("Physico-Chemical Report", methods, ["MW Calculation", "pI Calculation"], p_df)
             st.download_button("📥 Download Technical Report", rep, f"{pdb_name}_Physico.docx", key="dl_1")
 
-        # --- SECTION 2: UPDATED ACTIVE SITE MAPPING ---
+        # SECTION 2: CATALYTIC ACTIVE SITE MAPPING
         if run_2:
             st.subheader("II. Catalytic Residue Mapping")
             st_molstar(file_path, height=500)
             
-            # 1. Initialize lists and NeighborSearch
-            from Bio.PDB import NeighborSearch, Selection
             active_res_list = []
             
-            # Extract all atoms and identify potential ligands (Heteroatoms that aren't water)
-            all_atoms = list(structure.get_atoms())
-            ligand_atoms = [atom for atom in all_atoms if atom.get_parent().id[0].startswith('H_') 
-                            and atom.get_parent().resname not in ['HOH', 'WAT']]
-
-            if ligand_atoms:
-                st.success(f"Detected Ligand: {ligand_atoms[0].get_parent().resname}. Mapping Proximity...")
-                
-                # Use NeighborSearch for high-performance spatial lookups
-                ns = NeighborSearch(all_atoms)
-                
-                # Find all residues within 5.0 Angstroms of any ligand atom
-                nearby_residues = set()
-                for l_atom in ligand_atoms:
-                    for nearby_atom in ns.search(l_atom.coord, 5.0):
-                        parent_res = nearby_atom.get_parent()
-                        if parent_res.id[0] == ' ': # Ensure it's a standard amino acid
-                            nearby_residues.add(parent_res)
-                
-                for res in nearby_residues:
+            # Defined catalytic residues based on biochemical activity
+            # Nucleophiles: SER, CYS, THR (perform the attack)
+            # Acid-Base: HIS, ASP, GLU, LYS (shuttle protons)
+            catalytic_map = {
+                'SER': 'Nucleophile', 'CYS': 'Nucleophile', 'THR': 'Nucleophile',
+                'HIS': 'Acid-Base', 'ASP': 'Acid-Base', 'GLU': 'Acid-Base', 'LYS': 'Acid-Base'
+            }
+            
+            # Iterate through the protein structure
+            for res in structure.get_residues():
+                # Filter for standard amino acids only
+                if res.id[0] == ' ' and res.resname in catalytic_map:
                     active_res_list.append({
                         'Residue': res.resname,
                         'Position': res.id[1],
                         'Chain': res.get_parent().id,
-                        'Type': 'Binding Pocket'
+                        'Functional Role': catalytic_map[res.resname],
+                        'Status': 'Conserved Motif'
                     })
-            else:
-                st.warning("No ligand detected. Searching for conserved Catalytic Triad (HIS-SER-ASP/CYS).")
-                for res in structure.get_residues():
-                    if res.resname in ['HIS', 'SER', 'ASP', 'CYS'] and res.id[0] == ' ':
-                        active_res_list.append({
-                            'Residue': res.resname,
-                            'Position': res.id[1],
-                            'Chain': res.get_parent().id,
-                            'Type': 'Conserved Motif'
-                        })
 
-            # 2. Display Results
             if active_res_list:
-                a_df = pd.DataFrame(active_res_list).sort_values(by='Position')
-                st.write("### Predicted Active Site Residues")
+                # Organize and clean data
+                a_df = pd.DataFrame(active_res_list).drop_duplicates(subset=['Position', 'Chain'])
+                a_df = a_df.sort_values(by='Position').reset_index(drop=True)
+                
+                st.write("**Identified Catalytic Framework:**")
                 st.dataframe(a_df, use_container_width=True)
                 
-                # Calculation for report: Euclidean distance formula
-                math_basis = [r"d(p, q) = \sqrt{(q_1-p_1)^2 + (q_2-p_2)^2 + (q_3-p_3)^2} \le 5.0\text{\AA}"]
-                
-                rep_a = create_prof_report(
-                    "Active Site Mapping Report", 
-                    "Residues identified using a 5.0 Angstrom spatial proximity threshold to non-water heteroatoms.", 
-                    math_basis, 
-                    a_df
-                )
+                # Report Generation logic
+                methods_text = "Identification of functional residues based on conserved catalytic motifs and side-chain chemistry."
+                rep_a = create_prof_report("Catalytic Active Site Mapping", methods_text, None, a_df)
                 st.download_button("📥 Download Mapping Report", rep_a, f"{pdb_name}_ActiveSite.docx", key="dl_2")
             else:
-                st.error("Could not resolve active site. Please check if the PDB contains a valid structure.")       # --- SECTION 3: MUTATION (Including New Graph Style) ---
+                st.error("No standard catalytic residues identified in this protein structure.")       
+                # --- SECTION 3: MUTATION (Including New Graph Style) ---
 if run_3 and file_path:
     st.subheader("III. Structural Hotspot Landscape")
     st_molstar(file_path, height=500) # Keep 3D at top
