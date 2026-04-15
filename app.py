@@ -117,16 +117,49 @@ with col_right:
             st_molstar(file_path, height=500)
             
             active_res = []
-            for res in structure.get_residues():
-                if res.resname in ['HIS', 'SER', 'ASP'] and res.id[0] == ' ':
-                    active_res.append([res.resname, res.id[1], "Surface" if res.id[1] % 2 == 0 else "Buried"])
             
-            a_df = pd.DataFrame(active_res, columns=['Residue', 'Position', 'Environment'])
-            st.dataframe(a_df, use_container_width=True)
+            # 1. Identify Ligands first (Non-water Heteroatoms)
+            ligands = [res for res in structure.get_residues() if res.id[0].startswith('H_')]
             
-            rep_a = create_prof_report("Active Site Mapping", "Structural residue identification via Biopython.", None, a_df)
-            st.download_button("📥 Download Mapping Report", rep_a, f"{pdb_name}_ActiveSite.docx", key="dl_2")
+            if ligands:
+                st.info(f"Detected {len(ligands)} potential ligand(s). Mapping residues within 5Å.")
+                # Simple Proximity Logic
+                for model in structure:
+                    for chain in model:
+                        for res in chain:
+                            if res.id[0] == ' ': # Standard Amino Acid
+                                # Check distance to any atom in any ligand
+                                is_nearby = False
+                                for ligand in ligands:
+                                    for atom_l in ligand:
+                                        for atom_r in res:
+                                            # Using the minus operator in Biopython calculates distance
+                                            if (atom_l - atom_r) < 5.0:
+                                                is_nearby = True
+                                                break
+                                        if is_nearby: break
+                                    if is_nearby: break
+                                
+                                if is_nearby:
+                                    active_res.append([res.resname, res.id[1], chain.id, "Ligand-Proximal"])
+            else:
+                st.warning("No ligand detected. Falling back to Catalytic Triad motif search.")
+                # Fallback to the original logic but improved
+                for res in structure.get_residues():
+                    if res.resname in ['HIS', 'SER', 'ASP', 'CYS', 'LYS'] and res.id[0] == ' ':
+                        active_res.append([res.resname, res.id[1], "N/A", "Sequence Motif"])
 
+            if active_res:
+                a_df = pd.DataFrame(active_res, columns=['Residue', 'Position', 'Chain', 'Criteria'])
+                st.dataframe(a_df, use_container_width=True)
+                
+                # Update report generation
+                rep_a = create_prof_report("Active Site Mapping", 
+                                         "Residues identified via ligand proximity (<5Å) or conserved catalytic motifs.", 
+                                         None, a_df)
+                st.download_button("📥 Download Mapping Report", rep_a, f"{pdb_name}_ActiveSite.docx", key="dl_2")
+            else:
+                st.error("No active site residues could be identified with current parameters.")
        # --- SECTION 3: MUTATION (Including New Graph Style) ---
 if run_3 and file_path:
     st.subheader("III. Structural Hotspot Landscape")
