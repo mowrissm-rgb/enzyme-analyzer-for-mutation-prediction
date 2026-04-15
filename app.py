@@ -118,40 +118,58 @@ with col_right:
             
             active_res_list = []
             
-            # Defined catalytic residues based on biochemical activity
-            # Nucleophiles: SER, CYS, THR (perform the attack)
-            # Acid-Base: HIS, ASP, GLU, LYS (shuttle protons)
+            # Map of residues based on their biochemical catalytic roles
             catalytic_map = {
                 'SER': 'Nucleophile', 'CYS': 'Nucleophile', 'THR': 'Nucleophile',
                 'HIS': 'Acid-Base', 'ASP': 'Acid-Base', 'GLU': 'Acid-Base', 'LYS': 'Acid-Base'
             }
             
-            # Iterate through the protein structure
+            # Scan protein structure for these residues
             for res in structure.get_residues():
-                # Filter for standard amino acids only
+                # ' ' filter ensures we only look at the protein, not water or ligands
                 if res.id[0] == ' ' and res.resname in catalytic_map:
                     active_res_list.append({
                         'Residue': res.resname,
                         'Position': res.id[1],
                         'Chain': res.get_parent().id,
-                        'Functional Role': catalytic_map[res.resname],
-                        'Status': 'Conserved Motif'
+                        'Functional Role': catalytic_map[res.resname]
                     })
 
             if active_res_list:
-                # Organize and clean data
+                # 1. Process Data
                 a_df = pd.DataFrame(active_res_list).drop_duplicates(subset=['Position', 'Chain'])
                 a_df = a_df.sort_values(by='Position').reset_index(drop=True)
                 
+                # 2. Display Table in UI
                 st.write("**Identified Catalytic Framework:**")
                 st.dataframe(a_df, use_container_width=True)
                 
-                # Report Generation logic
-                methods_text = "Identification of functional residues based on conserved catalytic motifs and side-chain chemistry."
-                rep_a = create_prof_report("Catalytic Active Site Mapping", methods_text, None, a_df)
-                st.download_button("📥 Download Mapping Report", rep_a, f"{pdb_name}_ActiveSite.docx", key="dl_2")
+                # 3. GENERATE & ADD DOWNLOAD BUTTON
+                # This part creates the .docx file in memory for the user
+                methods_text = (
+                    "Active site mapping performed by identifying residues with side-chains "
+                    "capable of nucleophilic attack or acid-base catalysis within the "
+                    "protein tertiary structure."
+                )
+                
+                # Create the report content
+                rep_a = create_prof_report(
+                    title="Catalytic Active Site Analysis", 
+                    methodology=methods_text, 
+                    formulas=["Search Criteria: {SER, CYS, THR, HIS, ASP, GLU, LYS}"], 
+                    df=a_df
+                )
+                
+                # The explicit Download Button
+                st.download_button(
+                    label="📥 Download Mapping Report", 
+                    data=rep_a, 
+                    file_name=f"{pdb_name}_ActiveSite_Report.docx", 
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="download_active_site"
+                )
             else:
-                st.error("No standard catalytic residues identified in this protein structure.")       
+                st.error("No standard catalytic residues were identified. Please check the PDB file format.")       
                 # --- SECTION 3: MUTATION (Including New Graph Style) ---
 if run_3 and file_path:
     st.subheader("III. Structural Hotspot Landscape")
